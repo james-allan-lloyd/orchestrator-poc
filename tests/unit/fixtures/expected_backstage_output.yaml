@@ -1,0 +1,9 @@
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  description: Team Test Team
+  name: team-test
+spec:
+  children: []
+  displayName: Test Team
+  type: team
