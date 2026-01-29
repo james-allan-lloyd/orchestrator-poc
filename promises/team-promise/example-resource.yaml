@@ -1,0 +1,7 @@
+apiVersion: platform.kratix.io/v1alpha1
+kind: Team
+metadata:
+  name: example-team
+spec:
+  id: team-a
+  name: Team A

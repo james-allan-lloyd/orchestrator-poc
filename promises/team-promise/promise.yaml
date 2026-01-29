@@ -1,0 +1,59 @@
+apiVersion: platform.kratix.io/v1alpha1
+kind: Promise
+metadata:
+  creationTimestamp: null
+  labels:
+    kratix.io/promise-version: v0.0.1
+  name: team
+spec:
+  api:
+    apiVersion: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    metadata:
+      creationTimestamp: null
+      name: teams.platform.kratix.io
+    spec:
+      group: platform.kratix.io
+      names:
+        kind: Team
+        plural: teams
+        singular: team
+      scope: Namespaced
+      versions:
+      - name: v1alpha1
+        schema:
+          openAPIV3Schema:
+            properties:
+              spec:
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                type: object
+            type: object
+        served: true
+        storage: true
+    status:
+      acceptedNames:
+        kind: ""
+        plural: ""
+      conditions: null
+      storedVersions: null
+  workflows:
+    config: {}
+    promise: {}
+    resource:
+      configure:
+      - apiVersion: platform.kratix.io/v1alpha1
+        kind: Pipeline
+        metadata:
+          name: team-configure
+        spec:
+          containers:
+          - image: python:3.11
+            name: python
+status:
+  workflows: 0
+  workflowsFailed: 0
+  workflowsSucceeded: 0
