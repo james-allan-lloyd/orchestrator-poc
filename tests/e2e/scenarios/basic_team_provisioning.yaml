@@ -1,0 +1,51 @@
+name: basic_team_provisioning
+description: Test basic team provisioning workflow from start to finish
+steps:
+  - name: deploy_promise
+    description: Deploy the Team Promise to cluster
+    resource: ../../promises/team-promise/promise.yaml
+    action: apply
+    wait_for: promise_ready
+  
+  - name: create_team
+    description: Create a team resource
+    resource: 
+      apiVersion: platform.kratix.io/v1alpha1
+      kind: Team
+      metadata:
+        name: e2e-test-team
+        namespace: default
+      spec:
+        id: team-e2e
+        name: E2E Test Team
+    action: apply
+    wait_for: resource_configured
+  
+  - name: verify_output
+    description: Verify that Backstage team definition was generated
+    checks:
+      - type: file_exists
+        pattern: "backstage-team-*.yaml"
+        location: kratix_output
+      - type: yaml_content
+        file: "backstage-team-team-e2e.yaml"
+        path: "spec.displayName"
+        expected: "E2E Test Team"
+      - type: yaml_content
+        file: "backstage-team-team-e2e.yaml"
+        path: "metadata.name" 
+        expected: "team-e2e"
+  
+  - name: cleanup
+    description: Clean up test resources
+    resources:
+      - apiVersion: platform.kratix.io/v1alpha1
+        kind: Team
+        metadata:
+          name: e2e-test-team
+          namespace: default
+      - apiVersion: platform.kratix.io/v1alpha1
+        kind: Promise
+        metadata:
+          name: team
+    action: delete
