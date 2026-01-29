@@ -8,6 +8,7 @@ This tutorial demonstrates how to use the Team Promise to create team resources 
 - Docker or Podman for building container images
 - `kubectl` configured to access the cluster
 - Go installed (for Kratix CLI)
+- Python virtual environment for testing (see [README Development section](../README.md#development))
 
 ## Setup Instructions
 

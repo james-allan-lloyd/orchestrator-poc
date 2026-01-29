@@ -109,6 +109,58 @@ spec:
 
 ## Development
 
+### Testing
+
+Always use a virtual environment for testing to avoid polluting your system Python installation:
+
+```bash
+# Navigate to tests directory
+cd tests
+
+# Create and activate virtual environment
+python -m venv test-env
+source test-env/bin/activate  # On Windows: test-env\Scripts\activate
+
+# Install test dependencies
+pip install -r requirements.txt
+
+# Run unit tests
+PYTHONPATH=../promises/team-promise/workflows/resource/configure/team-configure/python/scripts python -m pytest unit/ -v
+
+# Deactivate when done
+deactivate
+```
+
+**Important**: Never install packages globally with `pip install` without a virtual environment. This can cause conflicts with system packages and other projects.
+
+### Test Structure
+
+- `tests/unit/`: Unit tests for Promise configure scripts
+- `tests/integration/`: Integration tests with Kubernetes cluster
+- `tests/contract/`: API and format validation tests  
+- `tests/e2e/`: End-to-end workflow tests
+
+### Running Tests
+
+Each test category can be run independently (from the `tests/` directory with virtual environment activated):
+
+```bash
+# Unit tests (fastest)
+python -m pytest unit/ -v
+
+# Integration tests (requires cluster)
+python -m pytest integration/ -v
+
+# Contract tests
+python -m pytest contract/ -v
+
+# End-to-end tests (full workflow)
+python -m pytest e2e/ -v
+
+# All tests
+python -m pytest . -v
+```
+
 This is an active proof of concept. Contributions and feedback are welcome as
 we explore the capabilities of Kratix for multi-repository infrastructure
 orchestration.
