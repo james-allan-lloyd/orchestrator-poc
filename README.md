@@ -38,8 +38,20 @@ The POC implements a workflow where:
 ### Setup
 
 1. Clone this repository
-2. Start local Kind cluster
-3. Install Kratix components
+2. Start local Kind cluster:
+   ```bash
+   kind create cluster --name kratix-poc
+   ```
+3. Install Kratix components:
+   ```bash
+   kubectl apply -f https://github.com/syntasso/kratix/releases/download/latest/kratix-quick-start-installer.yaml
+   
+   # Watch the installation (optional)
+   kubectl logs -f job/kratix-quick-start-installer -n kratix-platform-system
+   
+   # Verify installation
+   kubectl get pods -n kratix-platform-system
+   ```
 4. Configure Promise definitions
 5. Set up Git repository connections
 
