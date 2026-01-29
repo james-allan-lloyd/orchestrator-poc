@@ -1,10 +1,11 @@
 FROM python:3.11
 
-ADD scripts/pipeline.sh /usr/bin/pipeline.sh
+RUN pip install git+https://github.com/syntasso/kratix-python.git
+
 ADD scripts/configure.py /scripts/configure.py
 ADD resources resources
 
-RUN chmod +x /usr/bin/pipeline.sh
+RUN chmod +x /scripts/configure.py
 
-CMD [ "sh", "-c", "pipeline.sh" ]
+CMD ["python3", "/scripts/configure.py"]
 ENTRYPOINT []

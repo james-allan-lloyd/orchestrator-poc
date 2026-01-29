@@ -51,8 +51,9 @@ spec:
           name: team-configure
         spec:
           containers:
-          - image: python:3.11
+          - image: localhost/team-configure:latest
             name: python
+            imagePullPolicy: Never
 status:
   workflows: 0
   workflowsFailed: 0
