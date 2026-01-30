@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
 platform_destination_ip() {
-  docker inspect platform-control-plane | yq ".[0].NetworkSettings.Networks.kind.IPAddress"
+  docker inspect kratix-poc-control-plane | yq ".[0].NetworkSettings.Networks.kind.IPAddress"
 }
 
 generate_gitea_credentials() {
   # Use gitea from root directory
-  local giteabin="../gitea"
+  local giteabin="./gitea"
   if [ ! -f "$giteabin" ]; then
     echo "gitea binary not found at $giteabin; download here: https://docs.gitea.com/installation/install-from-binary" > /dev/stderr
     exit 1

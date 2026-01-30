@@ -88,6 +88,10 @@ The POC implements a workflow where:
    # Configure Git State Store
    kubectl apply -f manifests/gitstatestore.yaml
 
+   # Remove default BucketStateStore destination and add Git destination
+   kubectl delete destination worker-1
+   kubectl apply -f manifests/git-destination.yaml
+
    # Verify Git State Store is ready
    kubectl get gitstatestore
    ```
