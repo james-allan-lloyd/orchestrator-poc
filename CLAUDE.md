@@ -2,6 +2,14 @@
 
 This file contains configuration and development notes for Claude Code.
 
+## Code Style
+
+- Python: indentation of 2 with spaces. Use types as much as possible. Version should be 3.11+.
+
+## Workflow
+
+- Always run unit tests before committing.
+
 ## Testing Virtual Environment
 
 **Location**: `tests/test-env/`
@@ -47,3 +55,4 @@ deactivate
 ```
 
 Only commit if all tests pass. This ensures code quality and prevents regressions.
+
