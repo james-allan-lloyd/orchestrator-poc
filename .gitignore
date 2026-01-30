@@ -181,3 +181,6 @@ kind-config.yaml
 # Container images (if saved locally)
 *.tar
 *.tar.gz
+
+# Gitea binary
+gitea

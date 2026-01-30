@@ -39,6 +39,8 @@ The POC implements a workflow where:
 - kubectl
 - Git
 - Go (for Kratix CLI)
+- yq (for YAML processing)
+- wget (for downloading binaries)
 
 ### Setup
 
@@ -67,8 +69,30 @@ The POC implements a workflow where:
    go install github.com/syntasso/kratix-cli/cmd/kratix@latest
    ```
 
-5. Configure Promise definitions
-6. Set up Git repository connections
+5. Set up Git State Store for GitOps integration:
+
+   ```bash
+   # Download Gitea CLI
+   wget -O gitea https://dl.gitea.com/gitea/1.25.4/gitea-1.25.4-linux-amd64
+   chmod +x gitea
+
+   # Generate Gitea credentials
+   ./scripts/generate-gitea-credentials.sh kind-kratix-poc
+
+   # Deploy Gitea
+   kubectl apply -f https://raw.githubusercontent.com/syntasso/kratix/main/hack/platform/gitea-install.yaml
+
+   # Wait for Gitea to be ready
+   kubectl wait --for=condition=ready pod -l app=gitea -n gitea --timeout=60s
+
+   # Configure Git State Store
+   kubectl apply -f manifests/gitstatestore.yaml
+
+   # Verify Git State Store is ready
+   kubectl get gitstatestore
+   ```
+
+6. Configure Promise definitions
 
 ## Project Structure
 
@@ -79,6 +103,9 @@ The POC implements a workflow where:
 │       ├── example-resource.yaml
 │       └── workflows/
 ├── manifests/             # Raw Kubernetes manifests
+│   └── gitstatestore.yaml # Git State Store configuration
+├── scripts/               # Setup and utility scripts
+│   └── generate-gitea-credentials.sh
 ├── helm/                  # Helm charts (optional)
 ├── examples/              # Example custom resources
 └── docs/                  # Additional documentation
