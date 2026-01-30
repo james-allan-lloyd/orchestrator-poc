@@ -28,15 +28,81 @@ When a Team resource is created, Kratix:
 - Repository URL: https://localhost:8443/gitea_admin/kratix
 - Generated team files are stored in the repository root
 
-## Generated Output Structure
+## Git Repository Structure Options
 
-When a Team resource is created, the following files are generated in the Git repository:
+Kratix supports different filepath modes for organizing files in the Git repository to match GitOps tool requirements:
 
+### AggregatedYAML Mode (Current Configuration)
+All team resources are consolidated into a single YAML file:
 ```
 kratix/
-├── team-{id}/
-│   └── backstage-team-{id}.yaml   # Backstage Group definition
+└── teams/
+    └── backstage-teams.yaml       # All Backstage Group definitions
 ```
+
+### Nested Mode (Default)
+Each resource creates its own directory structure:
+```
+kratix/
+├── teams/
+│   ├── team-{id}/
+│   │   └── backstage-team-{id}.yaml
+│   └── team-{another-id}/
+│       └── backstage-team-{another-id}.yaml
+```
+
+### Flat Mode
+Files are written directly to the specified path:
+```
+kratix/
+└── backstage-catalog/
+    ├── backstage-team-{id}.yaml
+    ├── backstage-team-{another-id}.yaml
+    └── backstage-team-{third-id}.yaml
+```
+
+## GitOps Tool Compatibility
+
+- **AggregatedYAML**: Best for tools that prefer single manifest files
+- **Nested**: Good for tools that handle directory structures well  
+- **Flat**: Optimal for Backstage catalog discovery and simple GitOps tools
+
+## Configuring Repository Structure
+
+To change the file organization mode, update the Destination configuration:
+
+### For AggregatedYAML (Single File)
+```yaml
+apiVersion: platform.kratix.io/v1alpha1
+kind: Destination
+metadata:
+  name: gitea-destination
+spec:
+  path: teams
+  filepath:
+    mode: aggregatedYAML
+    filename: backstage-teams.yaml
+  stateStoreRef:
+    kind: GitStateStore
+    name: default
+```
+
+### For Flat Structure (Individual Files)
+```yaml
+apiVersion: platform.kratix.io/v1alpha1
+kind: Destination
+metadata:
+  name: gitea-destination-flat
+spec:
+  path: backstage-catalog
+  filepath:
+    mode: none
+  stateStoreRef:
+    kind: GitStateStore
+    name: default
+```
+
+**Note**: The `filepath.mode` is immutable once set. To change modes, you must delete and recreate the Destination.
 
 ## Example Workflow
 

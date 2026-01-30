@@ -1,12 +1,11 @@
 apiVersion: platform.kratix.io/v1alpha1
 kind: Destination
 metadata:
-  name: gitea-destination
+  name: gitea-destination-flat
 spec:
-  path: teams
+  path: backstage-catalog
   filepath:
-    mode: aggregatedYAML
-    filename: backstage-teams.yaml
+    mode: none
   stateStoreRef:
     kind: GitStateStore
     name: default
