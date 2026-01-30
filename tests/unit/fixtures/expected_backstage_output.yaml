@@ -1,6 +1,8 @@
 apiVersion: backstage.io/v1alpha1
 kind: Group
 metadata:
+  annotations:
+    contact.email: team-test@example.com
   description: Team Test Team
   name: team-test
 spec:

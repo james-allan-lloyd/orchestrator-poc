@@ -28,6 +28,8 @@ jobs:
       run: |
         cd tests
         python -m pytest unit/ -v --tb=short
+      env:
+        PYTHONPATH: ../promises/team-promise/workflows/resource/configure/team-configure/python/scripts
     
     - name: Run contract tests
       run: |

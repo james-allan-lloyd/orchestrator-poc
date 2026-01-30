@@ -69,10 +69,13 @@ def test_configure_generates_backstage_team(test_data: Dict[str, Any], tmp_path:
   assert output_data["metadata"]["name"] == "team-test"
   assert output_data["spec"]["displayName"] == "Test Team"
   assert output_data["spec"]["type"] == "team"
+  
+  # Verify email defaults to {id}@example.com
+  assert output_data["metadata"]["annotations"]["contact.email"] == "team-test@example.com"
 
-  # Verify print output
+  # Verify print output includes email
   captured = capsys.readouterr()
-  assert "Configuring team: Test Team (ID: team-test)" in captured.out
+  assert "Configuring team: Test Team (ID: team-test, Email: team-test@example.com)" in captured.out
 
 
 def test_backstage_format_validation(test_data: Dict[str, Any]) -> None:
@@ -89,3 +92,60 @@ def test_backstage_format_validation(test_data: Dict[str, Any]) -> None:
   assert expected_output["apiVersion"] == "backstage.io/v1alpha1"
   assert expected_output["kind"] == "Group"
   assert expected_output["spec"]["type"] == "team"
+
+
+def test_configure_with_explicit_email(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+  """Test that configure script uses explicit email when provided"""
+  
+  # Set up temporary directories
+  input_dir: Path = tmp_path / "input"
+  output_dir: Path = tmp_path / "output"
+  metadata_dir: Path = tmp_path / "metadata"
+
+  input_dir.mkdir()
+  output_dir.mkdir()
+  metadata_dir.mkdir()
+
+  # Create team resource with explicit email
+  team_with_email = {
+    "apiVersion": "platform.kratix.io/v1alpha1",
+    "kind": "Team",
+    "metadata": {"name": "email-test-team", "namespace": "default"},
+    "spec": {
+      "id": "team-email-test",
+      "name": "Email Test Team",
+      "email": "custom@company.com"
+    }
+  }
+
+  # Write test team resource to input file
+  input_file: Path = input_dir / "object.yaml"
+  with open(input_file, "w") as f:
+    yaml.dump(team_with_email, f)
+
+  # Set Kratix SDK directories to use our test directories
+  ks.set_input_dir(str(input_dir))
+  ks.set_output_dir(str(output_dir))
+  ks.set_metadata_dir(str(metadata_dir))
+
+  # Import and run the configure script
+  import configure
+
+  configure.main()
+
+  # Check that output file was created
+  output_files: List[Path] = list(output_dir.glob("backstage-team-*.yaml"))
+  assert len(output_files) == 1
+
+  output_file: Path = output_files[0]
+
+  # Verify the output content
+  with open(output_file, "r") as f:
+    output_data: Dict[str, Any] = yaml.safe_load(f)
+
+  # Verify explicit email is used
+  assert output_data["metadata"]["annotations"]["contact.email"] == "custom@company.com"
+
+  # Verify print output includes explicit email
+  captured = capsys.readouterr()
+  assert "Configuring team: Email Test Team (ID: team-email-test, Email: custom@company.com)" in captured.out
