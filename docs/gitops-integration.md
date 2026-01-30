@@ -19,9 +19,16 @@ When a Team resource is created, Kratix:
    kubectl port-forward -n gitea svc/gitea-http 8443:443
    ```
 
-2. Open https://localhost:8443 in your browser
-   - Username: `gitea_admin`
-   - Password: `r8sA8CPHD9!bt6d`
+2. Get Gitea credentials from Kubernetes:
+   ```bash
+   # Get username
+   kubectl get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d
+   
+   # Get password  
+   kubectl get secret gitea-credentials -o jsonpath='{.data.password}' | base64 -d
+   ```
+
+3. Open https://localhost:8443 in your browser and login with the retrieved credentials
 
 ### Repository Location
 
