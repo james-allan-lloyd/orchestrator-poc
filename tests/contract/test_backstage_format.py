@@ -76,7 +76,10 @@ class TestBackstageFormat(unittest.TestCase):
         }
         
         # Load expected output from fixtures
-        fixture_path = "/home/james/src/orchestrator-poc/tests/unit/fixtures/expected_backstage_output.yaml"
+        import os
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        fixture_path = os.path.join(test_dir, '..', 'unit', 'fixtures', 'expected_backstage_output.yaml')
+        
         with open(fixture_path, 'r') as f:
             self.expected_output = yaml.safe_load(f)
     

@@ -9,7 +9,12 @@ class TestAPISchema(unittest.TestCase):
     
     def setUp(self):
         """Load the Promise definition"""
-        promise_path = "/home/james/src/orchestrator-poc/promises/team-promise/promise.yaml"
+        import os
+        # Get path relative to test file location
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.join(test_dir, '..', '..')
+        promise_path = os.path.join(project_root, 'promises', 'team-promise', 'promise.yaml')
+        
         with open(promise_path, 'r') as f:
             self.promise = yaml.safe_load(f)
         
@@ -35,10 +40,16 @@ class TestAPISchema(unittest.TestCase):
         spec_props = self.schema['properties']['spec']['properties']
         self.assertIn('id', spec_props)
         self.assertIn('name', spec_props)
+        self.assertIn('email', spec_props)
         
         # Check property types
         self.assertEqual(spec_props['id']['type'], 'string')
         self.assertEqual(spec_props['name']['type'], 'string')
+        self.assertEqual(spec_props['email']['type'], 'string')
+        
+        # Check email validation pattern
+        self.assertIn('pattern', spec_props['email'])
+        self.assertEqual(spec_props['email']['pattern'], r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     
     def test_valid_team_resource(self):
         """Test that a valid team resource passes schema validation"""
@@ -99,6 +110,44 @@ class TestAPISchema(unittest.TestCase):
             validate(instance=extended_team, schema=self.schema)
         except jsonschema.ValidationError as e:
             self.fail(f"Extended team resource failed validation: {e}")
+
+    def test_valid_email_format(self):
+        """Test that valid email formats pass validation"""
+        valid_team_with_email = {
+            'spec': {
+                'id': 'team-email',
+                'name': 'Email Team',
+                'email': 'team@company.com'
+            }
+        }
+        
+        try:
+            validate(instance=valid_team_with_email, schema=self.schema)
+        except jsonschema.ValidationError as e:
+            self.fail(f"Valid team with email failed validation: {e}")
+
+    def test_invalid_email_format(self):
+        """Test that invalid email formats fail validation"""
+        invalid_emails = [
+            'invalid-email',
+            'missing@domain',
+            '@missinglocal.com',
+            'spaces in@email.com',
+            'missing.tld@domain'
+        ]
+        
+        for invalid_email in invalid_emails:
+            invalid_team = {
+                'spec': {
+                    'id': 'team-invalid-email',
+                    'name': 'Invalid Email Team',
+                    'email': invalid_email
+                }
+            }
+            
+            with self.assertRaises(jsonschema.ValidationError, 
+                                 msg=f"Email '{invalid_email}' should have failed validation"):
+                validate(instance=invalid_team, schema=self.schema)
 
 if __name__ == '__main__':
     unittest.main()
