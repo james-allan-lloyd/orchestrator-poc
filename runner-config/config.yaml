@@ -1,0 +1,24 @@
+# Gitea Actions Runner Configuration for Podman
+# Based on solution from https://gitea.com/gitea/act_runner/issues/223
+
+log:
+  level: debug
+
+runner:
+  file: .runner
+  capacity: 1
+  envs: {}
+  env_file: .env
+  timeout: 3h
+
+cache:
+  enabled: true
+
+container:
+  # Use "-" to indicate direct socket usage with Podman
+  docker_host: "-"
+  privileged: false
+  options: "--add-host=host.docker.internal:host-gateway"
+  workdir_parent: ""
+  valid_volumes: []
+  network: "host"

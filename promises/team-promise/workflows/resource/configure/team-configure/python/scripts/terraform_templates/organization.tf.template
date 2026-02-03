@@ -1,0 +1,18 @@
+resource "gitea_org" "team_{{team_id}}" {
+  name        = "{{team_id}}"
+  full_name   = "{{team_name}}"
+  description = "Organization for team {{team_name}} ({{team_email}})"
+  website     = ""
+  location    = ""
+  visibility  = "public"
+}
+
+output "organization_{{team_id}}_name" {
+  description = "Name of the created organization for team {{team_id}}"
+  value       = gitea_org.team_{{team_id}}.name
+}
+
+output "organization_{{team_id}}_id" {
+  description = "ID of the created organization for team {{team_id}}"
+  value       = gitea_org.team_{{team_id}}.id
+}
