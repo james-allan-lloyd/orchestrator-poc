@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import yaml
+import os
 from typing import Dict, Any
 import kratix_sdk as ks
 
@@ -40,6 +41,42 @@ def main() -> None:
   sdk.write_output(f"backstage-team-{team_id}.yaml", yaml_content.encode("utf-8"))
 
   print(f"Generated Backstage team definition for {team_display_name}")
+
+  # Generate Terraform files for organization creation
+  generate_terraform_files(sdk, team_id, team_display_name, team_email)
+
+
+def generate_terraform_files(sdk: ks.KratixSDK, team_id: str, team_name: str, team_email: str) -> None:
+  """Generate Terraform files for creating Gitea organization"""
+  
+  # Get the directory of the current script for template location
+  script_dir: str = os.path.dirname(os.path.abspath(__file__))
+  template_dir: str = os.path.join(script_dir, "terraform_templates")
+  
+  # Read organization Terraform template
+  org_template_path: str = os.path.join(template_dir, "organization.tf.template")
+  with open(org_template_path, "r") as f:
+    org_template: str = f.read()
+  
+  # Replace template variables with actual values
+  org_content: str = org_template.replace("{{team_id}}", team_id).replace("{{team_name}}", team_name).replace("{{team_email}}", team_email)
+  
+  # Write team-specific organization Terraform file
+  sdk.write_output(f"terraform/org-{team_id}.tf", org_content.encode("utf-8"))
+  
+  # Copy shared provider and variables files (these are the same for all teams)
+  provider_path: str = os.path.join(template_dir, "provider.tf")
+  variables_path: str = os.path.join(template_dir, "variables.tf")
+  
+  with open(provider_path, "r") as f:
+    provider_content: str = f.read()
+  sdk.write_output("terraform/provider.tf", provider_content.encode("utf-8"))
+  
+  with open(variables_path, "r") as f:
+    variables_content: str = f.read()
+  sdk.write_output("terraform/variables.tf", variables_content.encode("utf-8"))
+  
+  print(f"Generated Terraform files for organization: {team_id}")
 
 
 if __name__ == "__main__":

@@ -69,32 +69,28 @@ The POC implements a workflow where:
    go install github.com/syntasso/kratix-cli/cmd/kratix@latest
    ```
 
-5. Set up Git State Store for GitOps integration:
+5. Set up Enhanced Git State Store with Actions enabled:
 
    ```bash
-   # Download Gitea CLI
-   wget -O gitea https://dl.gitea.com/gitea/1.25.4/gitea-1.25.4-linux-amd64
-   chmod +x gitea
-
-   # Generate Gitea credentials
-   ./scripts/generate-gitea-credentials.sh kind-kratix-poc
-
-   # Deploy Gitea
-   kubectl apply -f https://raw.githubusercontent.com/syntasso/kratix/main/hack/platform/gitea-install.yaml
-
-   # Wait for Gitea to be ready
-   kubectl wait --for=condition=ready pod -l app=gitea -n gitea --timeout=60s
+   # Deploy enhanced Gitea with Actions enabled and persistent storage
+   ./scripts/deploy-gitea-enhanced.sh
 
    # Configure Git State Store
    kubectl apply -f manifests/gitstatestore.yaml
 
    # Remove default BucketStateStore destination and add Git destination
-   kubectl delete destination worker-1
+   kubectl delete destination worker-1 --ignore-not-found=true
    kubectl apply -f manifests/git-destination.yaml
 
    # Verify Git State Store is ready
    kubectl get gitstatestore
    ```
+
+   **Note**: The enhanced Gitea installation includes:
+   - **Actions enabled** (for CI/CD workflows)
+   - **5GB persistent storage** (data survives restarts)
+   - **Randomly generated secure credentials** (no hardcoded secrets)
+   - **Environment-based configuration** (following Gitea best practices)
 
 6. Configure Promise definitions
 
@@ -103,28 +99,50 @@ The POC implements a workflow where:
 ```
 ├── promises/              # Kratix Promise definitions
 │   └── team-promise/      # Team provisioning Promise
-│       ├── promise.yaml
+│       ├── promise.yaml   # Promise definition with email validation
 │       ├── example-resource.yaml
 │       └── workflows/
-├── manifests/             # Raw Kubernetes manifests
-│   └── gitstatestore.yaml # Git State Store configuration
+│           └── resource/configure/team-configure/python/scripts/
+│               ├── configure.py           # Main configure script
+│               └── terraform_templates/   # Terraform templates
+├── manifests/             # Kubernetes manifests
+│   ├── gitstatestore.yaml            # Git State Store configuration  
+│   └── gitea-install-enhanced.yaml   # Enhanced Gitea with Actions
 ├── scripts/               # Setup and utility scripts
-│   └── generate-gitea-credentials.sh
-├── helm/                  # Helm charts (optional)
-├── examples/              # Example custom resources
-└── docs/                  # Additional documentation
+│   ├── generate-gitea-credentials.sh # Enhanced credential generation
+│   ├── deploy-gitea-enhanced.sh      # Deploy enhanced Gitea
+│   ├── setup-gitea-runner.sh         # Actions runner setup
+│   ├── get-runner-token.sh           # Get registration token
+│   ├── create-test-repo.sh           # Create test repository
+│   ├── run-tests.sh                  # Unit test runner
+│   └── run-contract-tests.sh         # Contract test runner
+├── tests/                 # Comprehensive test suite
+│   ├── unit/              # Unit tests for configure scripts
+│   ├── contract/          # API and format validation tests
+│   ├── integration/       # Integration tests
+│   └── e2e/               # End-to-end workflow tests
+├── docs/                  # Documentation
+│   ├── gitops-integration.md    # GitOps workflow guide
+│   └── gitea-actions-setup.md   # Actions runner setup guide
+├── .gitea/workflows/      # Gitea Actions workflows
+│   └── deploy-organizations.yml # Organization deployment workflow
+└── test-actions-repo/     # Test repository for Actions validation
+    ├── .gitea/workflows/
+    └── README.md
 ```
 
 ## Promises
 
 ### Team Promise
 
-The Team Promise provides "Team provisioning as a service" functionality:
+The Team Promise provides "Team provisioning as a service" functionality with automatic organization creation:
 
-- Creates team resources with unique ID and descriptive name
+- Creates team resources with unique ID, name, and optional email
 - Generates Backstage-compatible team definitions
-- Uses Python-based configure workflow
-- Outputs team definitions to designated repositories
+- **Automatically creates Gitea organizations** using Terraform
+- **Triggers CI/CD workflows** via Gitea Actions
+- Uses Python-based configure workflow with comprehensive validation
+- Outputs both Backstage YAML and Terraform IaC to Git repositories
 
 Example usage:
 
@@ -134,9 +152,17 @@ kind: Team
 metadata:
   name: example-team
 spec:
-  id: team-a
-  name: Team A
+  id: team-alpha
+  name: Team Alpha
+  email: alpha@company.com  # Optional, defaults to team-alpha@example.com
 ```
+
+Features:
+- **Email validation** with regex patterns at CRD level
+- **Smart defaults** for email (uses team-id@example.com if not provided)
+- **Terraform generation** for Gitea organization creation
+- **GitOps workflow** with plan → review → apply process
+- **Comprehensive testing** with unit, contract, and integration tests
 
 ## Development
 

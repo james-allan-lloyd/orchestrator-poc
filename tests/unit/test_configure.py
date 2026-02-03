@@ -149,3 +149,114 @@ def test_configure_with_explicit_email(tmp_path: Path, capsys: pytest.CaptureFix
   # Verify print output includes explicit email
   captured = capsys.readouterr()
   assert "Configuring team: Email Test Team (ID: team-email-test, Email: custom@company.com)" in captured.out
+
+
+def test_terraform_files_generated(test_data: Dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+  """Test that configure script generates Terraform files for organization creation"""
+
+  # Set up temporary directories
+  input_dir: Path = tmp_path / "input"
+  output_dir: Path = tmp_path / "output"
+  metadata_dir: Path = tmp_path / "metadata"
+
+  input_dir.mkdir()
+  output_dir.mkdir()
+  metadata_dir.mkdir()
+
+  # Write test team resource to input file
+  input_file: Path = input_dir / "object.yaml"
+  with open(input_file, "w") as f:
+    yaml.dump(test_data["team_resource"], f)
+
+  # Set Kratix SDK directories to use our test directories
+  ks.set_input_dir(str(input_dir))
+  ks.set_output_dir(str(output_dir))
+  ks.set_metadata_dir(str(metadata_dir))
+
+  # Import and run the configure script
+  import configure
+
+  configure.main()
+
+  # Check that Terraform files were created
+  terraform_dir: Path = output_dir / "terraform"
+  assert terraform_dir.exists(), "terraform directory should be created"
+
+  # Check for expected Terraform files
+  org_tf_file: Path = terraform_dir / "org-team-test.tf"
+  provider_tf_file: Path = terraform_dir / "provider.tf"
+  variables_tf_file: Path = terraform_dir / "variables.tf"
+
+  assert org_tf_file.exists(), "Organization Terraform file should be created"
+  assert provider_tf_file.exists(), "Provider Terraform file should be created"
+  assert variables_tf_file.exists(), "Variables Terraform file should be created"
+
+  # Verify organization Terraform content
+  with open(org_tf_file, "r") as f:
+    org_content: str = f.read()
+
+  assert 'resource "gitea_org" "team_team-test"' in org_content
+  assert 'name        = "team-test"' in org_content
+  assert 'full_name   = "Test Team"' in org_content
+  assert 'description = "Organization for team Test Team (team-test@example.com)"' in org_content
+
+  # Verify provider Terraform content
+  with open(provider_tf_file, "r") as f:
+    provider_content: str = f.read()
+
+  assert 'provider "gitea"' in provider_content
+  assert 'source  = "go-gitea/gitea"' in provider_content
+
+  # Verify print output includes Terraform generation
+  captured = capsys.readouterr()
+  assert "Generated Terraform files for organization: team-test" in captured.out
+
+
+def test_terraform_with_explicit_email(tmp_path: Path) -> None:
+  """Test that Terraform files use explicit email when provided"""
+  
+  # Set up temporary directories
+  input_dir: Path = tmp_path / "input"
+  output_dir: Path = tmp_path / "output"
+  metadata_dir: Path = tmp_path / "metadata"
+
+  input_dir.mkdir()
+  output_dir.mkdir()
+  metadata_dir.mkdir()
+
+  # Create team resource with explicit email
+  team_with_email = {
+    "apiVersion": "platform.kratix.io/v1alpha1",
+    "kind": "Team",
+    "metadata": {"name": "terraform-email-test", "namespace": "default"},
+    "spec": {
+      "id": "tf-email-test",
+      "name": "Terraform Email Test",
+      "email": "terraform@company.com"
+    }
+  }
+
+  # Write test team resource to input file
+  input_file: Path = input_dir / "object.yaml"
+  with open(input_file, "w") as f:
+    yaml.dump(team_with_email, f)
+
+  # Set Kratix SDK directories to use our test directories
+  ks.set_input_dir(str(input_dir))
+  ks.set_output_dir(str(output_dir))
+  ks.set_metadata_dir(str(metadata_dir))
+
+  # Import and run the configure script
+  import configure
+
+  configure.main()
+
+  # Check organization Terraform file content
+  terraform_dir: Path = output_dir / "terraform"
+  org_tf_file: Path = terraform_dir / "org-tf-email-test.tf"
+  
+  with open(org_tf_file, "r") as f:
+    org_content: str = f.read()
+
+  # Verify explicit email is used in description
+  assert 'description = "Organization for team Terraform Email Test (terraform@company.com)"' in org_content
