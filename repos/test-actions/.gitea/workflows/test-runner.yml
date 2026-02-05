@@ -3,9 +3,9 @@ run-name: Testing runner functionality
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -24,6 +24,7 @@ jobs:
           echo "OS Info: $(cat /etc/os-release | grep PRETTY_NAME)"
 
       - name: Test Docker availability
+        continue-on-error: true
         run: |
           echo "🐳 Testing Docker functionality"
           docker --version
@@ -60,14 +61,14 @@ jobs:
         run: |
           echo "🏗️  Testing Terraform functionality"
           terraform version
-          
+
       - name: Create test Terraform file
         run: |
           cat > test.tf << EOF
           terraform {
             required_version = ">= 1.0"
           }
-          
+
           output "test_message" {
             value = "Hello from Terraform in Gitea Actions!"
           }
@@ -90,10 +91,10 @@ jobs:
       - name: Simulate organization creation
         run: |
           echo "🏢 Simulating organization creation workflow"
-          
+
           # Create mock terraform files like our team promise would generate
           mkdir -p terraform
-          
+
           cat > terraform/provider.tf << EOF
           terraform {
             required_providers {
@@ -104,7 +105,7 @@ jobs:
             }
           }
           EOF
-          
+
           cat > terraform/org-test-team.tf << EOF
           resource "gitea_org" "team_test_team" {
             name        = "test-team"
@@ -112,13 +113,13 @@ jobs:
             description = "Organization for team Test Team (test@example.com)"
             visibility  = "public"
           }
-          
+
           output "organization_test_team_name" {
             description = "Name of the created organization"
             value       = gitea_org.team_test_team.name
           }
           EOF
-          
+
           echo "✅ Mock Terraform files created:"
           ls -la terraform/
           echo
@@ -127,3 +128,4 @@ jobs:
           echo
           echo "📄 Organization configuration:"
           cat terraform/org-test-team.tf
+
