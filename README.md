@@ -34,67 +34,84 @@ The POC implements a workflow where:
 
 ### Prerequisites
 
-- Docker
+- Docker (or Podman with Docker compatibility)
 - Kind
 - kubectl
 - Git
-- Go (for Kratix CLI)
-- yq (for YAML processing)
-- wget (for downloading binaries)
+- Helm
+- SSH client
+- OpenSSL (for certificate generation)
 
-### Setup
+### Quick Start - Automated 6-Stage Build
 
-1. Clone this repository
-2. Start local Kind cluster:
+For a complete automated setup, run:
 
-   ```bash
-   kind create cluster --name kratix-poc
-   ```
+```bash
+./scripts/build-poc.sh
+```
 
-3. Install Kratix components:
+This runs all 6 stages in sequence with proper verification at each step.
 
-   ```bash
-   kubectl apply -f https://github.com/syntasso/kratix/releases/download/latest/kratix-quick-start-installer.yaml
+### Manual Stage-by-Stage Setup
 
-   # Watch the installation (optional)
-   kubectl logs -f job/kratix-quick-start-installer -n kratix-platform-system
+#### Stage 1: Cluster Preparation
+```bash
+./scripts/01-setup-cluster.sh
+```
+- Creates Kind cluster with ingress controller
+- Configures port mappings for SSH (30222) and HTTP (80/443)
+- Installs NGINX ingress controller
 
-   # Verify installation
-   kubectl get pods -n kratix-platform-system
-   ```
+#### Stage 2: Kratix Installation
+```bash
+./scripts/02-install-kratix.sh
+```
+- Installs Kratix platform components
+- Applies UID 65534 patch for Git operations
+- Removes default BucketStateStore destination
 
-4. Install Kratix CLI:
+#### Stage 3: Gitea + Actions Runner
+```bash
+./scripts/03-setup-gitea.sh
+```
+- Deploys Gitea via Helm with PostgreSQL and SSH
+- Generates secure credentials and tokens
+- Sets up and registers Actions runner
+- Creates test repository for validation
 
-   ```bash
-   go install github.com/syntasso/kratix-cli/cmd/kratix@latest
-   ```
+#### Stage 4: SSH Git Destination
+```bash
+./scripts/04-configure-ssh-gitea.sh
+```
+- Generates SSH keys for GitStateStore authentication
+- Configures SSH GitStateStore with proper authentication
+- Verifies SSH connectivity and readiness
 
-5. Set up Enhanced Git State Store with Actions enabled:
+#### Stage 5: Kratix Repository + Pipeline
+```bash
+./scripts/05-setup-kratix-repo.sh
+```
+- Sets up kratix repository for infrastructure code
+- Configures Terraform pipeline and secrets
+- Enables Actions for automated workflows
 
-   ```bash
-   # Deploy enhanced Gitea with Actions enabled and persistent storage
-   ./scripts/deploy-gitea-enhanced.sh
+#### Stage 6: Promise Installation + Testing
+```bash
+./scripts/06-test-teams.sh
+```
+- Installs Team Promise
+- Tests team creation, update, and deletion lifecycle
+- Verifies GitOps workflow and Terraform execution
 
-   # Configure Git State Store
-   kubectl apply -f manifests/gitstatestore.yaml
+### Verification
 
-   # Remove default BucketStateStore destination and add Git destination
-   kubectl delete destination worker-1 --ignore-not-found=true
-   kubectl apply -f manifests/git-destination.yaml
-
-   # Verify Git State Store is ready
-   kubectl get gitstatestore
-   ```
-
-   **Note**: The enhanced Gitea installation includes:
-
-   - **Actions enabled** (for CI/CD workflows)
-   - **5GB persistent storage** (data survives restarts)
-   - **Randomly generated secure credentials** (no hardcoded secrets)
-   - **Environment-based configuration** (following Gitea best practices)
-   - **Centralized SSL configuration** (via `scripts/gitea-config.sh`) for easy dev/production switching
-
-6. Configure Promise definitions
+After each stage, verify the setup:
+- **Stage 1**: `kubectl get nodes` and `kubectl get pods -n ingress-nginx`
+- **Stage 2**: `kubectl get pods -n kratix-platform-system`
+- **Stage 3**: Visit `http://localhost:3000` and check runner with `docker ps`
+- **Stage 4**: `kubectl get gitstatestore` should show "Ready"
+- **Stage 5**: Check repository at `http://localhost:3000/gitea_admin/kratix`
+- **Stage 6**: `kubectl get teams` and verify files in git repository
 
 ## Project Structure
 

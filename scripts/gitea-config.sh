@@ -56,7 +56,7 @@ gitea_curl() {
 gitea_admin_curl() {
   local username=$(kubectl get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)
   local password=$(kubectl get secret gitea-credentials -o jsonpath='{.data.password}' | base64 -d)
-  
+
   if [ "$GITEA_SSL_SECURE_MODE" = "true" ]; then
     curl -u "$username:$password" "$@"
   else
@@ -102,7 +102,7 @@ gitea_ensure_port_forward() {
 
   if ! gitea_curl -s "$check_url" >/dev/null 2>&1; then
     echo "🔗 Starting port forward to Gitea..."
-    kubectl port-forward -n gitea svc/gitea-http ${GITEA_LOCAL_PORT}:443 >/dev/null 2>&1 &
+    kubectl port-forward -n gitea svc/gitea-http ${GITEA_LOCAL_PORT}:3000 >/dev/null 2>&1 &
     export GITEA_PORT_FORWARD_PID=$!
     echo "⏳ Waiting for port forward..."
     sleep 5
@@ -114,7 +114,7 @@ gitea_ensure_port_forward() {
       fi
     }
 
-    # Only set trap if not already set
+    # # Only set trap if not already set
     if [ -z "$GITEA_CLEANUP_TRAP_SET" ]; then
       trap cleanup_port_forward EXIT
       export GITEA_CLEANUP_TRAP_SET="true"
@@ -163,4 +163,3 @@ if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
   # Script is being sourced
   gitea_validate_environment >/dev/null 2>&1 || true
 fi
-

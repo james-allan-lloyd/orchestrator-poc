@@ -38,22 +38,9 @@ service:
     port: 22
     nodePort: 30222
 
-# Enable ingress for HTTP
+# Disable ingress - using LoadBalancer directly
 ingress:
-  enabled: true
-  pathType: Prefix
-  className: "nginx"
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-  hosts:
-    - host: gitea.local
-      paths:
-        - path: /
-  tls:
-    - secretName: gitea-tls
-      hosts:
-        - gitea.local
+  enabled: false
 
 # Persistence - use existing PVC
 persistence:
@@ -68,9 +55,9 @@ gitea:
 
   config:
     server:
-      DOMAIN: gitea.local
-      ROOT_URL: https://gitea.local
-      SSH_DOMAIN: gitea.local
+      DOMAIN: localhost
+      ROOT_URL: http://localhost:3000
+      SSH_DOMAIN: localhost
       SSH_PORT: 22
       SSH_LISTEN_PORT: 2222
       DISABLE_SSH: false

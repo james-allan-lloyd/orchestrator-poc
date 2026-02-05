@@ -32,21 +32,37 @@ echo "Using instance URL: $(gitea_local_url)"
 # Ensure port forward is running
 gitea_ensure_port_forward
 
-# Get registration token from Kubernetes secret
+# Get or create registration token
 echo "🔑 Getting registration token..."
 GITEA_RUNNER_REGISTRATION_TOKEN=$(kubectl get secret gitea-runner-token -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
 if [ -z "$GITEA_RUNNER_REGISTRATION_TOKEN" ]; then
-  echo "❌ No registration token found in Kubernetes secret"
-  echo ""
-  echo "🔧 First-time setup required:"
-  echo "1. Run: ./scripts/get-runner-token.sh"
-  echo "2. Follow the instructions to get a token from Gitea UI"
-  echo "3. Then run this script again"
-  exit 1
+  echo "🔄 No existing token found, creating new registration token..."
+  
+  # Try to get registration token via API
+  TOKEN_RESPONSE=$(gitea_curl -s -X POST \
+    "$(gitea_local_url)/api/v1/admin/actions/runners/registration-token" \
+    -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json")
+
+  if [ ! -z "$TOKEN_RESPONSE" ] && echo "$TOKEN_RESPONSE" | grep -q '"token"'; then
+    # Extract token from JSON response
+    GITEA_RUNNER_REGISTRATION_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+    echo "✅ Successfully created registration token via API"
+    
+    # Store token in Kubernetes secret
+    kubectl create secret generic gitea-runner-token \
+      --from-literal=token="$GITEA_RUNNER_REGISTRATION_TOKEN" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    echo "❌ API token creation failed. Response: $TOKEN_RESPONSE"
+    echo "🔧 Manual token required - visit: $(gitea_local_url)/admin/actions/runners"
+    exit 1
+  fi
 fi
 
-echo "✅ Found registration token in Kubernetes secret: ${GITEA_RUNNER_REGISTRATION_TOKEN:0:8}..."
+echo "✅ Found registration token: ${GITEA_RUNNER_REGISTRATION_TOKEN:0:8}..."
 
 # Pre-flight checks for Podman functionality
 echo "🔍 Running pre-flight checks..."
