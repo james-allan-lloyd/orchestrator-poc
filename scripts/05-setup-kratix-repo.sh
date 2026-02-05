@@ -10,8 +10,8 @@ echo "🚀 Stage 5: Setting up Kratix repository and Terraform pipeline..."
 
 # Check SSH GitStateStore is ready
 if ! kubectl get gitstatestore default >/dev/null 2>&1; then
-    echo "❌ SSH GitStateStore not found. Run Stage 4 first."
-    exit 1
+  echo "❌ SSH GitStateStore not found. Run Stage 4 first."
+  exit 1
 fi
 
 # Configuration
@@ -31,30 +31,59 @@ echo "  Base directory: $BASE_REPO_DIR"
 # Ensure port forward is running
 gitea_ensure_port_forward
 
-echo "🔑 Generating Gitea admin token for workflows..."
+echo "🔑 Setting up Gitea admin token for workflows..."
 
-# Generate admin token for API access in workflows
-TOKEN_RESPONSE=$(gitea_curl -s -X POST \
-  "$(gitea_local_url)/api/v1/users/$GITEA_USERNAME/tokens" \
-  -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "kratix-workflow-token",
-    "scopes": ["write:repository", "write:admin"]
-  }')
-
-if echo "$TOKEN_RESPONSE" | grep -q '"sha1"'; then
-  GITEA_ADMIN_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"sha1":"[^"]*' | cut -d'"' -f4)
-  echo "✅ Generated admin token: ${GITEA_ADMIN_TOKEN:0:8}..."
-  
-  # Store in Kubernetes secret
-  kubectl create secret generic gitea-admin-token \
-    --from-literal=token="$GITEA_ADMIN_TOKEN" \
-    --namespace=default \
-    --dry-run=client -o yaml | kubectl apply -f -
+# Check if token already exists in Kubernetes
+if kubectl get secret gitea-admin-token >/dev/null 2>&1; then
+  echo "✅ Admin token secret already exists, retrieving..."
+  GITEA_ADMIN_TOKEN=$(kubectl get secret gitea-admin-token -o jsonpath='{.data.token}' | base64 -d)
+  echo "✅ Using existing admin token: ${GITEA_ADMIN_TOKEN:0:8}..."
 else
-  echo "❌ Failed to create admin token: $TOKEN_RESPONSE"
-  exit 1
+  echo "🔑 Creating new admin token..."
+
+  # Check if token with same name already exists in Gitea
+  EXISTING_TOKENS=$(gitea_curl -s -X GET \
+    "$(gitea_local_url)/api/v1/users/$GITEA_USERNAME/tokens" \
+    -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+    -H "Content-Type: application/json")
+
+  if echo "$EXISTING_TOKENS" | grep -q '"name":"kratix-workflow-token"'; then
+    echo "⚠️  Token with name 'kratix-workflow-token' already exists in Gitea"
+    echo "🗑️  Deleting existing token to recreate..."
+
+    # Extract token ID and delete it
+    TOKEN_ID=$(echo "$EXISTING_TOKENS" | grep -B2 -A2 '"name":"kratix-workflow-token"' | grep '"id":' | grep -o '[0-9]*')
+    if [ -n "$TOKEN_ID" ]; then
+      gitea_curl -s -X DELETE \
+        "$(gitea_local_url)/api/v1/users/$GITEA_USERNAME/tokens/$TOKEN_ID" \
+        -u "$GITEA_USERNAME:$GITEA_PASSWORD" >/dev/null
+      echo "✅ Deleted existing token"
+    fi
+  fi
+
+  # Generate admin token for API access in workflows
+  TOKEN_RESPONSE=$(gitea_curl -s -X POST \
+    "$(gitea_local_url)/api/v1/users/$GITEA_USERNAME/tokens" \
+    -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "kratix-workflow-token",
+      "scopes": ["write:repository", "write:admin"]
+    }')
+
+  if echo "$TOKEN_RESPONSE" | grep -q '"sha1"'; then
+    GITEA_ADMIN_TOKEN=$(echo "$TOKEN_RESPONSE" | grep -o '"sha1":"[^"]*' | cut -d'"' -f4)
+    echo "✅ Generated admin token: ${GITEA_ADMIN_TOKEN:0:8}..."
+
+    # Store in Kubernetes secret
+    kubectl create secret generic gitea-admin-token \
+      --from-literal=token="$GITEA_ADMIN_TOKEN" \
+      --namespace=default \
+      --dry-run=client -o yaml | kubectl apply -f -
+  else
+    echo "❌ Failed to create admin token: $TOKEN_RESPONSE"
+    exit 1
+  fi
 fi
 
 echo "📁 Setting up kratix repository..."
@@ -91,24 +120,6 @@ else
   exit 1
 fi
 
-echo "🏗️  Setting up Terraform pipeline in repository..."
-
-# Clone/setup local working copy
-if [ -d "$BASE_REPO_DIR/.git" ]; then
-    echo "📁 Repository already cloned, updating..."
-    cd "$BASE_REPO_DIR"
-    git pull origin main || echo "⚠️  Pull failed, continuing..."
-else
-    echo "📥 Cloning repository..."
-    git clone "$(gitea_local_url | sed "s|://|://$GITEA_USERNAME:$GITEA_PASSWORD@|")/$REPO_OWNER/$REPO_NAME.git" "$BASE_REPO_DIR"
-    cd "$BASE_REPO_DIR"
-fi
-
-# Configure git
-git config user.name "Kratix Platform" 2>/dev/null || true
-git config user.email "kratix@platform.local" 2>/dev/null || true
-gitea_configure_git_ssl
-
 echo "🔧 Setting up repository secrets..."
 
 # Configure repository secret for GITEA_ADMIN_TOKEN
@@ -132,14 +143,45 @@ gitea_curl -s -X PATCH \
   "$(gitea_local_url)/api/v1/repos/$REPO_OWNER/$REPO_NAME" \
   -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
   -H "Content-Type: application/json" \
-  -d '{ "has_actions": true }' > /dev/null
+  -d '{ "has_actions": true }' >/dev/null
 
-echo "📄 Verifying Terraform pipeline workflow exists..."
-if [ -f ".gitea/workflows/deploy-organizations.yml" ]; then
-  echo "✅ Terraform pipeline workflow found"
-else
-  echo "⚠️  Terraform pipeline workflow not found - should be created by Team Promise output"
-fi
+echo "📄 Initializing repository structure from template..."
+
+# Copy template files from repos/kratix to temporary directory
+TEMP_REPO_DIR="/tmp/kratix-repo-init"
+rm -rf "$TEMP_REPO_DIR"
+
+# Initialize temporary directory as git repository
+mkdir -p "$TEMP_REPO_DIR"
+cd "$TEMP_REPO_DIR"
+git init
+git config user.name "Kratix Platform"
+git config user.email "kratix@platform.local"
+gitea_configure_git_ssl
+
+# Add remote origin
+git remote add origin "$(gitea_local_url | sed "s|://|://$GITEA_USERNAME:$GITEA_PASSWORD@|")/$REPO_OWNER/$REPO_NAME.git"
+git fetch
+
+git pull origin main --rebase
+
+cp -R "$SCRIPT_DIR/../repos/kratix/." ./
+
+# Add all files and commit
+git add .
+git commit -m "Initialize Kratix GitOps repository
+
+- Add .gitea/workflows/deploy-organizations.yml for automated Terraform deployment
+- Update README with repository structure and workflow documentation  
+- Repository ready for Team Promise generated configurations"
+
+echo "🚀 Pushing repository initialization to Gitea..."
+git push origin main
+
+echo "✅ Repository initialized from template"
+
+# Clean up temporary directory and return to working directory
+# rm -rf "$TEMP_REPO_DIR"
 
 echo "✅ Stage 5 Complete!"
 echo ""
@@ -153,3 +195,4 @@ echo "  GitStateStore status:"
 kubectl get gitstatestore default -o jsonpath='{.status.conditions[0].type}: {.status.conditions[0].status} - {.status.conditions[0].message}' 2>/dev/null || echo "Status pending"
 echo ""
 echo "🎯 Next: Run ./scripts/06-test-teams.sh"
+
