@@ -25,7 +25,7 @@ data:
     #!/usr/bin/env bash
     set -euo pipefail
     set -x
-    
+
     # Create necessary directories (ownership will be set by PVC and securityContext)
     mkdir -p /data/git/.ssh
     chmod -R 700 /data/git/.ssh
@@ -34,21 +34,21 @@ data:
     mkdir -p /data/gitea/sessions
     mkdir -p /data/git/gitea-repositories
     mkdir -p /data/git/lfs
-    
+
     # Prepare temp directory structure
     mkdir -p "${GITEA_TEMP}"
     chmod ug+rwx "${GITEA_TEMP}"
-    
+
     # Verify we can write to data directory
     touch /data/.write-test && rm /data/.write-test
     echo "Directory structure initialized successfully"
-    
+
   config_environment.sh: |-
     #!/bin/bash
     set -euo pipefail
-    
+
     echo "Generating app.ini configuration with environment variables..."
-    
+
     # Generate complete app.ini with secrets from environment
     cat > /data/gitea/conf/app.ini << EOF
     APP_NAME = Gitea: Git with a cup of tea
@@ -67,10 +67,18 @@ data:
     DOMAIN = ${GITEA__SERVER__DOMAIN}
     SSH_DOMAIN = ${GITEA__SERVER__DOMAIN}
     HTTP_PORT = ${GITEA__SERVER__HTTP_PORT}
+    PROTOCOL=http
+    # CERT_FILE=/data/gitea/cert.pem
+    # KEY_FILE=/data/gitea/key.pem
     ROOT_URL = ${GITEA__SERVER__ROOT_URL}
-    DISABLE_SSH = false
+    DISABLE_SSH = true
+    START_SSH_SERVER = false  # use external openssh server
     SSH_PORT = ${GITEA__SERVER__SSH_PORT}
     SSH_LISTEN_PORT = ${GITEA__SERVER__SSH_LISTEN_PORT}
+    SSH_ROOT_PATH = /data/git/.ssh
+    SSH_CREATE_AUTHORIZED_KEYS_FILE = true
+    SSH_AUTHORIZED_KEYS_BACKUP = false
+    SSH_HOST_KEY_TYPE = rsa
     LFS_START_SERVER = ${GITEA__SERVER__LFS_START_SERVER}
     LFS_CONTENT_PATH = ${GITEA__SERVER__LFS_CONTENT_PATH}
     LFS_JWT_SECRET = ${GITEA__SERVER__LFS_JWT_SECRET}
@@ -121,17 +129,37 @@ data:
 
     echo "Configuration file generated successfully"
     ls -la /data/gitea/conf/app.ini
+
+  init_ssh_keys.sh: |-
+    #!/usr/bin/env bash
+    set -euo pipefail
+    
+    # Create SSH host keys for Gitea built-in SSH server
+    SSH_DIR="/data/git/.ssh"
+    mkdir -p "$SSH_DIR"
+    chmod 700 "$SSH_DIR"
+    
+    # Generate host keys if they don't exist
+    if [ ! -f "$SSH_DIR/ssh_host_rsa_key" ]; then
+      echo "Generating SSH host RSA key..."
+      ssh-keygen -t rsa -b 4096 -f "$SSH_DIR/ssh_host_rsa_key" -N "" -q
+      chmod 600 "$SSH_DIR/ssh_host_rsa_key"
+      chmod 644 "$SSH_DIR/ssh_host_rsa_key.pub"
+      echo "SSH host key generated successfully"
+    fi
+    
+    ls -la "$SSH_DIR/"
     
   init_gitea.sh: |-
     #!/usr/bin/env bash
     set -euo pipefail
-    
+
     # Set config file path
     GITEA_CONFIG="/data/gitea/conf/app.ini"
-    
+
     echo "Initializing Gitea database..."
     gitea --config "$GITEA_CONFIG" migrate
-    
+
     function configure_admin_user() {
       echo "Configuring admin user: ${GITEA_ADMIN_USERNAME}"
       local ACCOUNT_ID=$(gitea --config "$GITEA_CONFIG" admin user list --admin | grep -e "\s\+${GITEA_ADMIN_USERNAME}\s\+" | awk -F " " "{printf \$1}" || echo "")
@@ -152,7 +180,7 @@ data:
         echo "Password updated successfully"
       fi
     }
-    
+
     configure_admin_user
     echo "Gitea initialization completed"
 ---
@@ -175,209 +203,218 @@ spec:
         fsGroup: 1000
         runAsNonRoot: true
       initContainers:
-      - name: 1-init-directories
-        image: docker.gitea.com/gitea:1.25-rootless
-        command: ["/usr/sbin/init_directory_structure.sh"]
-        env:
-        - name: GITEA_WORK_DIR
-          value: /data
-        - name: GITEA_TEMP
-          value: /tmp/gitea
-        volumeMounts:
-        - name: init
-          mountPath: /usr/sbin
-        - name: data
-          mountPath: /data
-        - name: temp
-          mountPath: /tmp
-        securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          allowPrivilegeEscalation: false
-          
-      - name: 2-configure-gitea
-        image: docker.gitea.com/gitea:1.25-rootless
-        command: ["/usr/sbin/config_environment.sh"]
-        env:
-        - name: GITEA_WORK_DIR
-          value: /data
-        - name: GITEA_TEMP
-          value: /tmp/gitea
-        # Database configuration
-        - name: GITEA__DATABASE__DB_TYPE
-          value: "sqlite3"
-        - name: GITEA__DATABASE__PATH
-          value: "/data/gitea/gitea.db"
-        # Security configuration
-        - name: GITEA__SECURITY__INSTALL_LOCK
-          value: "true"
-        - name: GITEA__SECURITY__INTERNAL_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: gitea-security
-              key: internal-token
-        - name: GITEA__SECURITY__SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: gitea-security
-              key: secret-key
-        # OAuth2 configuration
-        - name: GITEA__OAUTH2__JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: gitea-security
-              key: jwt-secret
-        # Server configuration
-        - name: GITEA__SERVER__DOMAIN
-          value: "gitea-http.gitea.svc.cluster.local"
-        - name: GITEA__SERVER__ROOT_URL
-          value: "https://gitea-http.gitea.svc.cluster.local:443"
-        - name: GITEA__SERVER__HTTP_PORT
-          value: "3000"
-        - name: GITEA__SERVER__SSH_PORT
-          value: "22"
-        - name: GITEA__SERVER__SSH_LISTEN_PORT
-          value: "22"
-        - name: GITEA__SERVER__LFS_START_SERVER
-          value: "true"
-        - name: GITEA__SERVER__LFS_CONTENT_PATH
-          value: "/data/git/lfs"
-        - name: GITEA__SERVER__LFS_JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: gitea-security
-              key: lfs-jwt-secret
-        # Repository configuration
-        - name: GITEA__REPOSITORY__ROOT
-          value: "/data/git/gitea-repositories"
-        # Actions configuration
-        - name: GITEA__ACTIONS__ENABLED
-          value: "true"
-        - name: GITEA__ACTIONS__DEFAULT_ACTIONS_URL
-          value: "https://github.com"
-        # Log configuration
-        - name: GITEA__LOG__LEVEL
-          value: "Info"
-        - name: GITEA__LOG__ROOT_PATH
-          value: "/data/gitea/log"
-        # Session configuration
-        - name: GITEA__SESSION__PROVIDER
-          value: "file"
-        - name: GITEA__SESSION__PROVIDER_CONFIG
-          value: "/data/gitea/sessions"
-        # Service configuration
-        - name: GITEA__SERVICE__DISABLE_REGISTRATION
-          value: "false"
-        - name: GITEA__SERVICE__REQUIRE_SIGNIN_VIEW
-          value: "false"
-        # Mailer configuration (disabled)
-        - name: GITEA__MAILER__ENABLED
-          value: "false"
-        volumeMounts:
-        - name: init
-          mountPath: /usr/sbin
-        - name: data
-          mountPath: /data
-        - name: temp
-          mountPath: /tmp
-        securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          allowPrivilegeEscalation: false
-          
-      - name: 3-init-gitea
-        image: docker.gitea.com/gitea:1.25-rootless
-        command: ["/usr/sbin/init_gitea.sh"]
-        env:
-        - name: GITEA_WORK_DIR
-          value: /data
-        - name: GITEA_TEMP
-          value: /tmp/gitea
-        # Admin user configuration
-        - name: GITEA_ADMIN_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: gitea-admin
-              key: username
-        - name: GITEA_ADMIN_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: gitea-admin
-              key: password
-        volumeMounts:
-        - name: init
-          mountPath: /usr/sbin
-        - name: data
-          mountPath: /data
-        - name: temp
-          mountPath: /tmp
-        securityContext:
-          runAsUser: 1000
-          runAsGroup: 1000
-          allowPrivilegeEscalation: false
-          
+        - name: 1-init-directories
+          image: docker.gitea.com/gitea:1.25-rootless
+          command: ["/usr/sbin/init_directory_structure.sh"]
+          env:
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+          volumeMounts:
+            - name: init
+              mountPath: /usr/sbin
+            - name: data
+              mountPath: /data
+            - name: temp
+              mountPath: /tmp
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+
+        - name: 2-configure-gitea
+          image: docker.gitea.com/gitea:1.25-rootless
+          command: ["/usr/sbin/config_environment.sh"]
+          env:
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+            # Database configuration
+            - name: GITEA__DATABASE__DB_TYPE
+              value: "sqlite3"
+            - name: GITEA__DATABASE__PATH
+              value: "/data/gitea/gitea.db"
+            # Security configuration
+            - name: GITEA__SECURITY__INSTALL_LOCK
+              value: "true"
+            - name: GITEA__SECURITY__INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-security
+                  key: internal-token
+            - name: GITEA__SECURITY__SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-security
+                  key: secret-key
+            # OAuth2 configuration
+            - name: GITEA__OAUTH2__JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-security
+                  key: jwt-secret
+            # Server configuration
+            - name: GITEA__SERVER__DOMAIN
+              value: "gitea-http.gitea.svc.cluster.local"
+            - name: GITEA__SERVER__ROOT_URL
+              value: "https://gitea-http.gitea.svc.cluster.local:443"
+            - name: GITEA__SERVER__HTTP_PORT
+              value: "3000"
+            - name: GITEA__SERVER__SSH_PORT
+              value: "2222"
+            - name: GITEA__SERVER__SSH_LISTEN_PORT
+              value: "2222"
+            - name: GITEA__SERVER__LFS_START_SERVER
+              value: "true"
+            - name: GITEA__SERVER__LFS_CONTENT_PATH
+              value: "/data/git/lfs"
+            - name: GITEA__SERVER__LFS_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-security
+                  key: lfs-jwt-secret
+            # Repository configuration
+            - name: GITEA__REPOSITORY__ROOT
+              value: "/data/git/gitea-repositories"
+            # Actions configuration
+            - name: GITEA__ACTIONS__ENABLED
+              value: "true"
+            - name: GITEA__ACTIONS__DEFAULT_ACTIONS_URL
+              value: "https://github.com"
+            # Log configuration
+            - name: GITEA__LOG__LEVEL
+              value: "Info"
+            - name: GITEA__LOG__ROOT_PATH
+              value: "/data/gitea/log"
+            # Session configuration
+            - name: GITEA__SESSION__PROVIDER
+              value: "file"
+            - name: GITEA__SESSION__PROVIDER_CONFIG
+              value: "/data/gitea/sessions"
+            # Service configuration
+            - name: GITEA__SERVICE__DISABLE_REGISTRATION
+              value: "false"
+            - name: GITEA__SERVICE__REQUIRE_SIGNIN_VIEW
+              value: "false"
+            # Mailer configuration (disabled)
+            - name: GITEA__MAILER__ENABLED
+              value: "false"
+          volumeMounts:
+            - name: init
+              mountPath: /usr/sbin
+            - name: data
+              mountPath: /data
+            - name: temp
+              mountPath: /tmp
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+
+        - name: 3-init-gitea
+          image: docker.gitea.com/gitea:1.25-rootless
+          command: ["/usr/sbin/init_gitea.sh"]
+          env:
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+            # Admin user configuration
+            - name: GITEA_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin
+                  key: username
+            - name: GITEA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-admin
+                  key: password
+          volumeMounts:
+            - name: init
+              mountPath: /usr/sbin
+            - name: data
+              mountPath: /data
+            - name: temp
+              mountPath: /tmp
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+
       containers:
-      - name: gitea
-        image: docker.gitea.com/gitea:1.25-rootless
-        imagePullPolicy: Always
-        env:
-        - name: GITEA_WORK_DIR
-          value: /data
-        - name: GITEA_TEMP
-          value: /tmp/gitea
-        - name: TMPDIR
-          value: /tmp/gitea
-        - name: GITEA_APP_INI
-          value: /data/gitea/conf/app.ini
-        ports:
-        - name: ssh
-          containerPort: 22
-        - name: http
-          containerPort: 3000
-        livenessProbe:
-          failureThreshold: 10
-          initialDelaySeconds: 200
-          periodSeconds: 10
-          successThreshold: 1
-          tcpSocket:
-            port: http
-          timeoutSeconds: 1
-        readinessProbe:
-          failureThreshold: 3
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          successThreshold: 1
-          tcpSocket:
-            port: http
-          timeoutSeconds: 1
-        resources: {}
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            add:
-            - SYS_CHROOT
-            drop:
-            - ALL
-          privileged: false
-          readOnlyRootFilesystem: false
-          runAsGroup: 1000
-          runAsNonRoot: true
-          runAsUser: 1000
-        volumeMounts:
-        - name: temp
-          mountPath: /tmp
-        - name: data
-          mountPath: /data
+        - name: gitea
+          image: docker.gitea.com/gitea:1.25-rootless
+          imagePullPolicy: Always
+          env:
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+            - name: TMPDIR
+              value: /tmp/gitea
+            - name: GITEA_APP_INI
+              value: /data/gitea/conf/app.ini
+          ports:
+            - name: ssh
+              containerPort: 2222
+            - name: http
+              containerPort: 3000
+          livenessProbe:
+            failureThreshold: 10
+            initialDelaySeconds: 200
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: http
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: http
+            timeoutSeconds: 1
+          resources: {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                - SYS_CHROOT
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+          volumeMounts:
+            - name: temp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+            - mountPath: /data/gitea/key.pem
+              name: cert
+              subPath: privateKey
+            - mountPath: /data/gitea/cert.pem
+              name: cert
+              subPath: caFile
       volumes:
-      - name: init
-        configMap:
-          name: gitea-init
-          defaultMode: 0755
-      - name: data
-        persistentVolumeClaim:
-          claimName: gitea-storage
-      - name: temp
-        emptyDir: {}
+        - name: init
+          configMap:
+            name: gitea-init
+            defaultMode: 0755
+        - name: data
+          persistentVolumeClaim:
+            claimName: gitea-storage
+        - name: cert
+          secret:
+            secretName: gitea-tls
+        - name: temp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -386,11 +423,11 @@ metadata:
   namespace: gitea
 spec:
   ports:
-  - name: ssh
-    port: 22
-    protocol: TCP
-    targetPort: 22
-    nodePort: 30222
+    - name: ssh
+      port: 22
+      protocol: TCP
+      targetPort: 2222
+      nodePort: 30222
   selector:
     app: gitea
   type: NodePort
@@ -402,11 +439,12 @@ metadata:
   namespace: gitea
 spec:
   ports:
-  - name: http
-    port: 443
-    protocol: TCP
-    targetPort: 3000
-    nodePort: 31333
+    - name: http
+      port: 443
+      protocol: TCP
+      targetPort: 3000
+      nodePort: 31333
   selector:
     app: gitea
   type: NodePort
+

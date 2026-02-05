@@ -14,9 +14,15 @@ When a Team resource is created, Kratix:
 
 ### Web Interface
 
-1. Port-forward to access Gitea locally:
+All Gitea access now uses centralized configuration for consistent SSL handling:
+
+1. Start port-forward and access Gitea:
    ```bash
-   kubectl port-forward -n gitea svc/gitea-http 8443:443
+   # Uses centralized SSL configuration
+   source scripts/gitea-config.sh
+   gitea_ensure_port_forward
+   
+   echo "Access Gitea at: $(gitea_local_url)"
    ```
 
 2. Get Gitea credentials from Kubernetes:

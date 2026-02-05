@@ -5,8 +5,7 @@ metadata:
 spec:
   path: teams
   filepath:
-    mode: aggregatedYAML
-    filename: backstage-teams.yaml
+    mode: none
   stateStoreRef:
     kind: GitStateStore
     name: default

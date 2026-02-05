@@ -1,0 +1,112 @@
+# Minimal Gitea Helm values for production deployment
+# Single node, PostgreSQL, SSH enabled, rootless
+
+# Use existing namespace
+namespace: "gitea"
+
+# Single replica
+replicaCount: 1
+
+# Rootless image
+image:
+  rootless: true
+
+# Security context for rootless
+podSecurityContext:
+  fsGroup: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+    add:
+      - SYS_CHROOT
+  privileged: false
+  readOnlyRootFilesystem: false
+  runAsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Service configuration
+service:
+  http:
+    type: ClusterIP
+    port: 3000
+  ssh:
+    type: NodePort
+    port: 22
+    nodePort: 30222
+
+# Enable ingress for HTTP
+ingress:
+  enabled: true
+  pathType: Prefix
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  hosts:
+    - host: gitea.local
+      paths:
+        - path: /
+  tls:
+    - secretName: gitea-tls
+      hosts:
+        - gitea.local
+
+# Persistence - use existing PVC
+persistence:
+  enabled: true
+  existingClaim: gitea-storage
+
+# Gitea configuration
+gitea:
+  admin:
+    # Use existing admin secret
+    existingSecret: gitea-admin
+
+  config:
+    server:
+      DOMAIN: gitea.local
+      ROOT_URL: https://gitea.local
+      SSH_DOMAIN: gitea.local
+      SSH_PORT: 22
+      SSH_LISTEN_PORT: 2222
+      DISABLE_SSH: false
+      START_SSH_SERVER: true  # Enable built-in SSH server
+      PROTOCOL: http
+      HTTP_PORT: 3000
+    database:
+      DB_TYPE: postgres
+      HOST: gitea-postgresql-ha-pgpool:5432
+      NAME: gitea
+      USER: gitea
+      PASSWD: gitea  # Simple password for now
+
+# Enable PostgreSQL HA (single node for simplicity)
+postgresql-ha:
+  enabled: true
+  global:
+    postgresql:
+      database: gitea
+      username: gitea
+      password: gitea
+  postgresql:
+    replicaCount: 1  # Single node
+    repmgrPassword: changeme2
+    postgresPassword: changeme1
+    password: gitea
+  pgpool:
+    adminPassword: changeme3
+    srCheckPassword: changeme4
+  persistence:
+    size: 10Gi
+
+# Disable regular PostgreSQL (we use HA version)
+postgresql:
+  enabled: false
+
+# Enable test connection
+test:
+  enabled: true

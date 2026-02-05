@@ -10,6 +10,25 @@ This guide walks you through setting up an enhanced Gitea installation with Acti
 - Port 8443 available for port forwarding
 - openssl available for generating random secrets
 
+## SSL/TLS Configuration
+
+All Gitea scripts now use centralized SSL configuration via `scripts/gitea-config.sh`. This allows easy switching between secure and insecure modes:
+
+- **Development mode** (default): Uses self-signed certificates with SSL verification disabled
+- **Production mode**: Uses proper SSL certificates with full verification
+
+To switch to production mode:
+```bash
+# Edit scripts/gitea-config.sh and change:
+export GITEA_SSL_SECURE_MODE="true"
+```
+
+The centralized configuration handles:
+- URL generation (localhost:8443 for port-forwarding)
+- SSL certificate verification flags
+- Git SSL settings for repository operations
+- Curl command SSL options
+
 ## Enhanced Gitea Installation
 
 Our enhanced Gitea setup includes:
@@ -165,7 +184,9 @@ Watch the workflow execution in the Gitea UI to verify:
 
 1. **Check port forwarding**:
    ```bash
-   curl -k https://localhost:8443
+   # Test connection (SSL options handled by central config)
+   source scripts/gitea-config.sh
+   gitea_curl "$(gitea_local_url)"
    ```
 
 2. **Verify registration token**:

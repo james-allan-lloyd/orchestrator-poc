@@ -1,7 +1,7 @@
 variable "gitea_base_url" {
   description = "Base URL of the Gitea instance"
   type        = string
-  default     = "https://gitea-http.gitea.svc.cluster.local:443"
+  default     = "https://host.docker.internal:8443"
 }
 
 variable "gitea_admin_token" {

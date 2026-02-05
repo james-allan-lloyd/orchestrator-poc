@@ -87,10 +87,12 @@ The POC implements a workflow where:
    ```
 
    **Note**: The enhanced Gitea installation includes:
+
    - **Actions enabled** (for CI/CD workflows)
    - **5GB persistent storage** (data survives restarts)
    - **Randomly generated secure credentials** (no hardcoded secrets)
    - **Environment-based configuration** (following Gitea best practices)
+   - **Centralized SSL configuration** (via `scripts/gitea-config.sh`) for easy dev/production switching
 
 6. Configure Promise definitions
 
@@ -106,7 +108,7 @@ The POC implements a workflow where:
 │               ├── configure.py           # Main configure script
 │               └── terraform_templates/   # Terraform templates
 ├── manifests/             # Kubernetes manifests
-│   ├── gitstatestore.yaml            # Git State Store configuration  
+│   ├── gitstatestore.yaml            # Git State Store configuration
 │   └── gitea-install-enhanced.yaml   # Enhanced Gitea with Actions
 ├── scripts/               # Setup and utility scripts
 │   ├── generate-gitea-credentials.sh # Enhanced credential generation
@@ -126,9 +128,14 @@ The POC implements a workflow where:
 │   └── gitea-actions-setup.md   # Actions runner setup guide
 ├── .gitea/workflows/      # Gitea Actions workflows
 │   └── deploy-organizations.yml # Organization deployment workflow
-└── test-actions-repo/     # Test repository for Actions validation
-    ├── .gitea/workflows/
-    └── README.md
+└── repos/
+    ├── test-actions/     # Test repository for Actions validation
+    │   ├── .gitea/workflows/
+    │   └── README.md
+    └── kratix/           # Base IaC repository for the platform
+        ├── .gitea/workflows/
+    │   │   └── deploy-organizations.yml # Organization deployment workflow
+        └── README.md
 ```
 
 ## Promises
@@ -154,12 +161,13 @@ metadata:
 spec:
   id: team-alpha
   name: Team Alpha
-  email: alpha@company.com  # Optional, defaults to team-alpha@example.com
+  email: alpha@company.com # Optional, defaults to team-alpha@example.com
 ```
 
 Features:
+
 - **Email validation** with regex patterns at CRD level
-- **Smart defaults** for email (uses team-id@example.com if not provided)
+- **Smart defaults** for email (uses <team-id@example.com> if not provided)
 - **Terraform generation** for Gitea organization creation
 - **GitOps workflow** with plan → review → apply process
 - **Comprehensive testing** with unit, contract, and integration tests
@@ -168,57 +176,63 @@ Features:
 
 ### Testing
 
-Always use a virtual environment for testing to avoid polluting your system Python installation:
+The project includes automated test scripts that handle virtual environment setup and cleanup automatically:
 
 ```bash
-# Navigate to tests directory
+# Run unit tests (fastest, tests Promise configure scripts)
+./scripts/run-tests.sh
+
+# Run contract tests (API and format validation)
+./scripts/run-contract-tests.sh
+
+# Run individual test categories manually (if needed)
 cd tests
-
-# Create and activate virtual environment
 python -m venv test-env
-source test-env/bin/activate  # On Windows: test-env\Scripts\activate
-
-# Install test dependencies
+source test-env/bin/activate
 pip install -r requirements.txt
 
-# Run unit tests
+# Unit tests
 PYTHONPATH=../promises/team-promise/workflows/resource/configure/team-configure/python/scripts python -m pytest unit/ -v
-
-# Deactivate when done
-deactivate
-```
-
-**Important**: Never install packages globally with `pip install` without a virtual environment. This can cause conflicts with system packages and other projects.
-
-### Test Structure
-
-- `tests/unit/`: Unit tests for Promise configure scripts
-- `tests/integration/`: Integration tests with Kubernetes cluster
-- `tests/contract/`: API and format validation tests  
-- `tests/e2e/`: End-to-end workflow tests
-
-### Running Tests
-
-Each test category can be run independently (from the `tests/` directory with virtual environment activated):
-
-```bash
-# Unit tests (fastest)
-python -m pytest unit/ -v
-
-# Integration tests (requires cluster)
-python -m pytest integration/ -v
 
 # Contract tests
 python -m pytest contract/ -v
 
-# End-to-end tests (full workflow)
-python -m pytest e2e/ -v
-
-# All tests
-python -m pytest . -v
+# Cleanup
+deactivate
 ```
+
+**Recommended**: Use the test scripts (`./scripts/run-tests.sh` and `./scripts/run-contract-tests.sh`) as they automatically handle virtual environment setup, dependency installation, and cleanup.
+
+### Test Structure
+
+- `tests/unit/`: Unit tests for Promise configure scripts and Terraform generation
+- `tests/contract/`: API and format validation tests for generated outputs
+- `tests/integration/`: Integration tests with Kubernetes cluster (planned)
+- `tests/e2e/`: End-to-end workflow tests (planned)
+
+### Gitea Actions Testing
+
+Test the complete CI/CD pipeline with the enhanced Gitea setup:
+
+```bash
+# Deploy enhanced Gitea with Actions enabled
+./scripts/deploy-gitea-enhanced.sh
+
+# Set up Actions runner
+./scripts/get-runner-token.sh
+./scripts/setup-gitea-runner.sh
+
+# Create test repository to validate runner functionality
+./scripts/create-test-repo.sh
+```
+
+The test repository includes workflows that validate:
+
+- Basic runner functionality and environment
+- Docker/container execution capabilities
+- Terraform tools availability
+- Organization creation workflow simulation
 
 This is an active proof of concept. Contributions and feedback are welcome as
 we explore the capabilities of Kratix for multi-repository infrastructure
 orchestration.
-

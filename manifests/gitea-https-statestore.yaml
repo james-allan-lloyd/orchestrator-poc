@@ -1,0 +1,14 @@
+apiVersion: platform.kratix.io/v1alpha1
+kind: GitStateStore
+metadata:
+  name: default
+spec:
+  authMethod: basicAuth
+  branch: main
+  gitAuthor:
+    name: kratix
+  secretRef:
+    name: gitea-credentials
+    namespace: default
+  url: http://gitea-http.gitea.svc.cluster.local:3000/gitea_admin/kratix
+

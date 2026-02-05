@@ -3,11 +3,12 @@ kind: GitStateStore
 metadata:
   name: default
 spec:
-  authMethod: basicAuth
+  authMethod: ssh
   branch: main
   gitAuthor:
     name: kratix
+    email: kratix@platform.local
   secretRef:
-    name: gitea-credentials
+    name: gitea-git-ssh
     namespace: default
-  url: https://gitea-http.gitea.svc.cluster.local:443/gitea_admin/kratix
+  url: ssh://git@gitea-ssh.gitea.svc.cluster.local:22/gitea_admin/kratix.git

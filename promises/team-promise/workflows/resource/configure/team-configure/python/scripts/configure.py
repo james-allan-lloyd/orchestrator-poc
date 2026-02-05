@@ -43,7 +43,13 @@ def main() -> None:
   print(f"Generated Backstage team definition for {team_display_name}")
 
   # Generate Terraform files for organization creation
-  generate_terraform_files(sdk, team_id, team_display_name, team_email)
+  try:
+    generate_terraform_files(sdk, team_id, team_display_name, team_email)
+    print(f"Successfully generated Terraform files for {team_display_name}")
+  except Exception as e:
+    print(f"ERROR generating Terraform files: {e}")
+    import traceback
+    traceback.print_exc()
 
 
 def generate_terraform_files(sdk: ks.KratixSDK, team_id: str, team_name: str, team_email: str) -> None:
