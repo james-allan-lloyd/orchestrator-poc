@@ -3,9 +3,10 @@ kind: Destination
 metadata:
   name: gitea-destination
 spec:
-  path: teams
+  path: /
   filepath:
     mode: none
   stateStoreRef:
     kind: GitStateStore
     name: default
+
