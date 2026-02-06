@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths: ["terraform/**", ".gitea/workflows/deploy-organizations.yml"]
 
+concurrency:
+  group: terraform-deploy
+  cancel-in-progress: false
+
 jobs:
   terraform:
     runs-on: ubuntu-latest
@@ -16,13 +20,16 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: ~1.0
+          terraform_version: ~1.5
 
       - name: Configure Terraform backend
         run: |
+          mkdir -p ../.tfstate
           cat > backend.tf << 'BACKEND_EOF'
           terraform {
-            backend "local" {}
+            backend "local" {
+              path = "../.tfstate/terraform.tfstate"
+            }
           }
           BACKEND_EOF
         working-directory: terraform
@@ -45,3 +52,14 @@ jobs:
           TF_VAR_gitea_admin_token: ${{ secrets.ADMIN_TOKEN_GITEA }}
           TF_VAR_gitea_base_url: http://localhost:8080
 
+      - name: Commit Terraform state
+        run: |
+          git config user.name "Gitea Actions"
+          git config user.email "actions@gitea.local"
+          git add .tfstate/terraform.tfstate
+          if git diff --cached --quiet; then
+            echo "No state changes to commit"
+          else
+            git commit -m "[skip ci] Update Terraform state"
+            git push
+          fi
