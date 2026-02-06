@@ -3,6 +3,6 @@ kind: Team
 metadata:
   name: example-team
 spec:
-  id: team-a
-  name: Team A
-  email: contact@team-a.com
+  id: example-team
+  name: Team Example
+  email: contact@team-example.com
