@@ -7,45 +7,19 @@ CLUSTER_NAME="kratix-poc"
 echo "🚀 Stage 1: Setting up Kind cluster with ingress and port mappings..."
 
 # Check if cluster already exists
-if kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
-  echo "⚠️  Cluster '${CLUSTER_NAME}' already exists!"
-  echo "   To recreate, run: kind delete cluster --name ${CLUSTER_NAME}"
-  echo "   Then run this script again."
-  exit 1
+if ! kind get clusters | grep -q "^${CLUSTER_NAME}$"; then
+  # Create kind config with port mappings for SSH and ingress
+  echo "🔧 Creating Kind cluster '${CLUSTER_NAME}'..."
+  kind create cluster --name "${CLUSTER_NAME}" --config manifests/kind-cluster-config.yaml
 fi
-
-echo "📋 Creating Kind cluster configuration..."
-
-# Create kind config with port mappings for SSH and ingress
-cat >/tmp/kind-config.yaml <<'EOF'
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  kubeadmConfigPatches:
-  - |
-    kind: InitConfiguration
-    nodeRegistration:
-      kubeletExtraArgs:
-        node-labels: "ingress-ready=true"
-  extraPortMappings:
-  - containerPort: 80
-    hostPort: 8080
-    protocol: TCP
-  - containerPort: 443
-    hostPort: 8443
-    protocol: TCP
-  - containerPort: 30222
-    hostPort: 30222
-    protocol: TCP
-EOF
-
-echo "🔧 Creating Kind cluster '${CLUSTER_NAME}'..."
-kind create cluster --name "${CLUSTER_NAME}" --config /tmp/kind-config.yaml
 
 echo "📦 Installing NGINX Ingress Controller..."
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
-sleep 5
+
+echo "⏳ Waiting for ingress controller pod to exist..."
+until kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller -o name 2>/dev/null | grep -q pod/; do
+  sleep 2
+done
 
 echo "⏳ Waiting for ingress controller to be ready..."
 kubectl wait --namespace ingress-nginx \
