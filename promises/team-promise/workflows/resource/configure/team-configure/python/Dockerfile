@@ -2,7 +2,7 @@ FROM python:3.11
 
 RUN pip install git+https://github.com/syntasso/kratix-python.git
 
-ADD scripts/configure.py /scripts/configure.py
+ADD scripts /scripts
 ADD resources resources
 
 RUN chmod +x /scripts/configure.py
