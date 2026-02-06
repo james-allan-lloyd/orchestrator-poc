@@ -38,9 +38,15 @@ service:
     port: 22
     nodePort: 30222
 
-# Disable ingress - using LoadBalancer directly
+# Ingress via NGINX ingress controller (Kind maps localhost:8080 → cluster:80)
 ingress:
-  enabled: false
+  enabled: true
+  className: nginx
+  hosts:
+    - host: localhost
+      paths:
+        - path: /
+          pathType: Prefix
 
 # Persistence - use existing PVC
 persistence:
@@ -56,7 +62,7 @@ gitea:
   config:
     server:
       DOMAIN: localhost
-      ROOT_URL: http://localhost:3000
+      ROOT_URL: http://localhost:8080
       SSH_DOMAIN: localhost
       SSH_PORT: 22
       SSH_LISTEN_PORT: 2222

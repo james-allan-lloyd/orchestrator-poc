@@ -108,9 +108,9 @@ This runs all 6 stages in sequence with proper verification at each step.
 After each stage, verify the setup:
 - **Stage 1**: `kubectl get nodes` and `kubectl get pods -n ingress-nginx`
 - **Stage 2**: `kubectl get pods -n kratix-platform-system`
-- **Stage 3**: Visit `http://localhost:3000` and check runner with `docker ps`
+- **Stage 3**: Visit `http://localhost:8080` and check runner with `docker ps`
 - **Stage 4**: `kubectl get gitstatestore` should show "Ready"
-- **Stage 5**: Check repository at `http://localhost:3000/gitea_admin/kratix`
+- **Stage 5**: Check repository at `http://localhost:8080/gitea_admin/kratix`
 - **Stage 6**: `kubectl get teams` and verify files in git repository
 
 ## Project Structure

@@ -16,12 +16,12 @@ When a Team resource is created, Kratix:
 
 All Gitea access now uses centralized configuration for consistent SSL handling:
 
-1. Start port-forward and access Gitea:
+1. Access Gitea via ingress:
    ```bash
-   # Uses centralized SSL configuration
+   # Uses centralized configuration
    source scripts/gitea-config.sh
-   gitea_ensure_port_forward
-   
+   gitea_wait_for_ready
+
    echo "Access Gitea at: $(gitea_local_url)"
    ```
 

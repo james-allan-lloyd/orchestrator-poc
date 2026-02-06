@@ -28,8 +28,8 @@ ssh-keygen -t rsa -b 4096 -f "${SSH_KEY_PATH}" -N "" -C "kratix@platform.local"
 
 echo "📤 Installing SSH public key in Gitea..."
 
-# Ensure port forward is running
-gitea_ensure_port_forward
+# Ensure Gitea is reachable via ingress
+gitea_wait_for_ready
 
 # Read SSH public key
 SSH_PUBLIC_KEY=$(cat "${SSH_KEY_PATH}.pub")

@@ -38,7 +38,7 @@ helm repo update
 echo "🔑 Generating Gitea credentials..."
 
 # Create namespace
-kubectl create namespace gitea
+kubectl create namespace gitea 2>/dev/null || true
 
 # Generate admin credentials
 echo "🔐 Generating admin credentials..."
@@ -48,13 +48,15 @@ GITEA_PASSWORD=$(generate_random_string 16)
 kubectl create secret generic gitea-admin \
   --from-literal=username="$GITEA_USERNAME" \
   --from-literal=password="$GITEA_PASSWORD" \
-  --namespace=gitea
+  --namespace=gitea \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # Create compatibility secret in default namespace (only admin credentials)
 kubectl create secret generic gitea-credentials \
   --from-literal=username="$GITEA_USERNAME" \
   --from-literal=password="$GITEA_PASSWORD" \
-  --namespace=default
+  --namespace=default \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # Generate security tokens
 echo "🔑 Generating security tokens..."
@@ -68,20 +70,14 @@ kubectl create secret generic gitea-security \
   --from-literal=secret-key="$SECRET_KEY" \
   --from-literal=jwt-secret="$JWT_SECRET" \
   --from-literal=lfs-jwt-secret="$LFS_JWT_SECRET" \
-  --namespace=gitea
+  --namespace=gitea \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 echo "🏗️  Installing Gitea via Helm..."
 helm install gitea gitea-charts/gitea -n gitea -f manifests/gitea-helm-values.yaml
 
 echo "⏳ Waiting for Gitea to be ready..."
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=gitea -n gitea --timeout=300s
-
-echo "🔗 Setting up port forward for Gitea access..."
-kubectl port-forward -n gitea service/gitea-http 3000:3000 > /dev/null 2>&1 &
-GITEA_PF_PID=$!
-sleep 5
-
-echo "✅ Port forward established (PID: $GITEA_PF_PID)"
 
 echo "🏃 Setting up Actions runner..."
 ./scripts/setup-gitea-runner.sh
@@ -93,7 +89,7 @@ REPO_NAME="actions-test"
 TEST_REPO_DIR="$SCRIPT_DIR/../repos/test-actions"
 
 echo "📦 Creating test repository in Gitea..."
-gitea_ensure_port_forward
+gitea_wait_for_ready
 
 # Create repository via API
 echo "🏗️  Creating repository via API..."
@@ -155,11 +151,10 @@ fi
 echo "✅ Stage 3 Complete!"
 echo ""
 echo "📋 Gitea Information:"
-echo "  URL: http://localhost:3000"
+echo "  URL: http://localhost:8080"
 echo "  Username: $GITEA_USERNAME"
 echo "  Password: $GITEA_PASSWORD"
 echo "  SSH: localhost:30222"
-echo "  Port Forward PID: $GITEA_PF_PID"
 echo ""
 echo "🔧 Verification:"
 kubectl get pods -n gitea
@@ -168,7 +163,3 @@ echo "🏃 Actions Runner Status:"
 docker ps --filter name=gitea-runner --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || echo "No runners found"
 echo ""
 echo "🎯 Next: Run ./scripts/04-configure-ssh-gitea.sh"
-
-echo ""
-echo "⚠️  IMPORTANT: Keep this terminal open to maintain port forward (PID: $GITEA_PF_PID)"
-echo "   Or run: kubectl port-forward -n gitea service/gitea-http 3000:3000"

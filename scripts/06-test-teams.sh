@@ -95,8 +95,8 @@ echo "📁 Checking git repository for generated files..."
 GITEA_USERNAME=$(kubectl get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d)
 GITEA_PASSWORD=$(kubectl get secret gitea-credentials -o jsonpath='{.data.password}' | base64 -d)
 
-# Ensure port forward is running
-gitea_ensure_port_forward
+# Ensure Gitea is reachable via ingress
+gitea_wait_for_ready
 
 echo "🌐 Repository contents:"
 echo "  URL: $(gitea_local_url)/$GITEA_USERNAME/kratix"

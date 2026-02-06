@@ -20,9 +20,9 @@ if [ "$GITEA_SSL_SECURE_MODE" = "true" ]; then
   export GITEA_CURL_SSL_OPTS=""
   export GITEA_GIT_SSL_VERIFY="true"
 else
-  # Development mode: HTTP with Helm deployment
+  # Development mode: HTTP via ingress (Kind maps localhost:8080 → cluster:80)
   export GITEA_PROTOCOL="http"
-  export GITEA_LOCAL_PORT="3000"
+  export GITEA_LOCAL_PORT="8080"
   export GITEA_CURL_SSL_OPTS="-k"
   export GITEA_GIT_SSL_VERIFY="false"
 fi
@@ -37,7 +37,7 @@ export GITEA_INTERNAL_PORT="443"
 export GITEA_INTERNAL_URL="https://${GITEA_INTERNAL_SERVICE}:${GITEA_INTERNAL_PORT}"
 
 # Docker/Container Internal URLs (for Actions runner jobs)
-export GITEA_CONTAINER_URL="https://host.docker.internal:${GITEA_LOCAL_PORT}"
+export GITEA_CONTAINER_URL="http://host.docker.internal:${GITEA_LOCAL_PORT}"
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -64,7 +64,7 @@ gitea_admin_curl() {
   fi
 }
 
-# Get the appropriate Gitea URL for local access (port-forwarded)
+# Get the appropriate Gitea URL for local access (via ingress)
 gitea_local_url() {
   echo "$GITEA_LOCAL_URL"
 }
@@ -96,30 +96,27 @@ gitea_configure_git_ssl() {
   git config http.sslVerify "$GITEA_GIT_SSL_VERIFY"
 }
 
-# Check if port forward is needed and running
-gitea_ensure_port_forward() {
-  local check_url="$GITEA_LOCAL_URL"
+# Wait for Gitea to be healthy via its health endpoint
+gitea_wait_for_ready() {
+  local check_url="${GITEA_LOCAL_URL}/api/healthz"
+  local timeout="${1:-60}"
+  local elapsed=0
 
-  if ! gitea_curl -s "$check_url" >/dev/null 2>&1; then
-    echo "🔗 Starting port forward to Gitea..."
-    kubectl port-forward -n gitea svc/gitea-http ${GITEA_LOCAL_PORT}:3000 >/dev/null 2>&1 &
-    export GITEA_PORT_FORWARD_PID=$!
-    echo "⏳ Waiting for port forward..."
-    sleep 5
-
-    # Set up cleanup trap
-    cleanup_port_forward() {
-      if [ ! -z "$GITEA_PORT_FORWARD_PID" ]; then
-        kill $GITEA_PORT_FORWARD_PID 2>/dev/null || true
-      fi
-    }
-
-    # # Only set trap if not already set
-    if [ -z "$GITEA_CLEANUP_TRAP_SET" ]; then
-      trap cleanup_port_forward EXIT
-      export GITEA_CLEANUP_TRAP_SET="true"
+  echo "⏳ Checking if Gitea is ready at $check_url ..."
+  while true; do
+    local status
+    status=$(gitea_curl -s -o /dev/null -w '%{http_code}' "$check_url" 2>/dev/null || echo "000")
+    if [ "$status" = "200" ]; then
+      echo "✅ Gitea is healthy"
+      return 0
     fi
-  fi
+    if [ "$elapsed" -ge "$timeout" ]; then
+      echo "❌ Timed out waiting for Gitea after ${timeout}s (last status: $status)"
+      return 1
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
 }
 
 # =============================================================================

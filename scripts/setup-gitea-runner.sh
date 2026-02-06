@@ -29,8 +29,8 @@ GITEA_PASSWORD=$(kubectl get secret gitea-credentials -o jsonpath='{.data.passwo
 echo "Username: $GITEA_USERNAME"
 echo "Using instance URL: $(gitea_local_url)"
 
-# Ensure port forward is running
-gitea_ensure_port_forward
+# Ensure Gitea is reachable via ingress
+gitea_wait_for_ready
 
 # Get or create registration token
 echo "🔑 Getting registration token..."
@@ -147,9 +147,4 @@ echo ""
 echo "🌐 Access Gitea at: $(gitea_local_url)"
 echo "👤 Username: $GITEA_USERNAME"
 echo "🔒 Password: $GITEA_PASSWORD"
-echo ""
-echo "ℹ️  Note: Keep the port forward running (PID: $GITEA_PORT_FORWARD_PID) for the runner to work"
-
-# Don't cleanup on successful exit - user needs the port forward
-trap - EXIT
 

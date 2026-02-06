@@ -64,11 +64,11 @@ echo "📋 Access Information:"
 GITEA_USERNAME=$(kubectl get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d 2>/dev/null || echo "N/A")
 GITEA_PASSWORD=$(kubectl get secret gitea-credentials -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "N/A")
 
-echo "  🌐 Gitea Web UI: http://localhost:3000"
+echo "  🌐 Gitea Web UI: http://localhost:8080"
 echo "  👤 Username: $GITEA_USERNAME"
 echo "  🔒 Password: $GITEA_PASSWORD"
-echo "  📁 Kratix Repository: http://localhost:3000/gitea_admin/kratix"
-echo "  🏃 Actions: http://localhost:3000/gitea_admin/kratix/actions"
+echo "  📁 Kratix Repository: http://localhost:8080/gitea_admin/kratix"
+echo "  🏃 Actions: http://localhost:8080/gitea_admin/kratix/actions"
 echo ""
 echo "📊 System Status:"
 echo "  Kratix Platform:"
@@ -84,7 +84,7 @@ echo "🔧 Useful Commands:"
 echo "  View teams: kubectl get teams"
 echo "  View GitStateStore: kubectl get gitstatestore"
 echo "  View runner logs: docker logs -f gitea-actions-runner"
-echo "  Access Gitea: open http://localhost:3000"
+echo "  Access Gitea: open http://localhost:8080"
 echo ""
 echo "🧪 Try creating a team:"
 echo '  kubectl apply -f - <<EOF'

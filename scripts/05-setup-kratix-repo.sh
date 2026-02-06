@@ -28,8 +28,8 @@ echo "  Owner: $REPO_OWNER"
 echo "  Repository: $REPO_NAME"
 echo "  Base directory: $BASE_REPO_DIR"
 
-# Ensure port forward is running
-gitea_ensure_port_forward
+# Ensure Gitea is reachable via ingress
+gitea_wait_for_ready
 
 echo "🔑 Setting up Gitea admin token for workflows..."
 
