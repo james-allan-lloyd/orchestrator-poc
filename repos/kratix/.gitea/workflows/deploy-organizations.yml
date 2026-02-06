@@ -2,45 +2,46 @@ name: Deploy Organizations
 
 on:
   push:
-    branches: [ main ]
-    paths: [ "terraform/**" ]
+    branches: [main]
+    paths: ["terraform/**", ".gitea/workflows/deploy-organizations.yml"]
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-    
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: ~1.0
-    
-    - name: Configure Terraform backend
-      run: |
-        cat > backend.tf << 'BACKEND_EOF'
-        terraform {
-          backend "local" {}
-        }
-        BACKEND_EOF
-      working-directory: terraform
-    
-    - name: Terraform Init
-      run: terraform init
-      working-directory: terraform
-    
-    - name: Terraform Plan
-      run: terraform plan
-      working-directory: terraform
-      env:
-        TF_VAR_gitea_admin_token: ${{ secrets.GITEA_ADMIN_TOKEN || env.GITEA_ADMIN_TOKEN }}
-        TF_VAR_gitea_base_url: http://gitea-http.gitea.svc.cluster.local:3000
-    
-    - name: Terraform Apply
-      run: terraform apply -auto-approve
-      working-directory: terraform
-      env:
-        TF_VAR_gitea_admin_token: ${{ secrets.GITEA_ADMIN_TOKEN || env.GITEA_ADMIN_TOKEN }}
-        TF_VAR_gitea_base_url: http://gitea-http.gitea.svc.cluster.local:3000
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ~1.0
+
+      - name: Configure Terraform backend
+        run: |
+          cat > backend.tf << 'BACKEND_EOF'
+          terraform {
+            backend "local" {}
+          }
+          BACKEND_EOF
+        working-directory: terraform
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: terraform
+
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: terraform
+        env:
+          TF_VAR_gitea_admin_token: ${{ secrets.ADMIN_TOKEN_GITEA }}
+          TF_VAR_gitea_base_url: http://localhost:8080
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: terraform
+        env:
+          TF_VAR_gitea_admin_token: ${{ secrets.ADMIN_TOKEN_GITEA }}
+          TF_VAR_gitea_base_url: http://localhost:8080
+

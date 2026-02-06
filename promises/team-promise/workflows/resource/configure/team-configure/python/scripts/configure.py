@@ -68,20 +68,10 @@ def generate_terraform_files(sdk: ks.KratixSDK, team_id: str, team_name: str, te
   org_content: str = org_template.replace("{{team_id}}", team_id).replace("{{team_name}}", team_name).replace("{{team_email}}", team_email)
   
   # Write team-specific organization Terraform file
+  # Note: provider.tf and variables.tf live in the template kratix repo
+  # and are NOT written here, so they survive team resource deletion.
   sdk.write_output(f"terraform/org-{team_id}.tf", org_content.encode("utf-8"))
-  
-  # Copy shared provider and variables files (these are the same for all teams)
-  provider_path: str = os.path.join(template_dir, "provider.tf")
-  variables_path: str = os.path.join(template_dir, "variables.tf")
-  
-  with open(provider_path, "r") as f:
-    provider_content: str = f.read()
-  sdk.write_output("terraform/provider.tf", provider_content.encode("utf-8"))
-  
-  with open(variables_path, "r") as f:
-    variables_content: str = f.read()
-  sdk.write_output("terraform/variables.tf", variables_content.encode("utf-8"))
-  
+
   print(f"Generated Terraform files for organization: {team_id}")
 
 

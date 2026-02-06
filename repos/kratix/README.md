@@ -41,7 +41,7 @@ This generates corresponding Terraform configuration in `terraform/org-alpha.tf`
 ## Workflow Environment
 
 The deployment workflow uses:
-- **GITEA_ADMIN_TOKEN**: Repository secret for Gitea API access
+- **ADMIN_TOKEN_GITEA**: Repository secret for Gitea API access
 - **Terraform Backend**: Local state management within the workflow
 - **Provider Configuration**: Connects to internal Gitea instance
 

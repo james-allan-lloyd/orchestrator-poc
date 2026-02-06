@@ -184,12 +184,13 @@ def test_terraform_files_generated(test_data: Dict[str, Any], tmp_path: Path, ca
 
   # Check for expected Terraform files
   org_tf_file: Path = terraform_dir / "org-team-test.tf"
-  provider_tf_file: Path = terraform_dir / "provider.tf"
-  variables_tf_file: Path = terraform_dir / "variables.tf"
 
   assert org_tf_file.exists(), "Organization Terraform file should be created"
-  assert provider_tf_file.exists(), "Provider Terraform file should be created"
-  assert variables_tf_file.exists(), "Variables Terraform file should be created"
+
+  # provider.tf and variables.tf live in the template kratix repo,
+  # not in the pipeline output, so they should NOT be written here.
+  assert not (terraform_dir / "provider.tf").exists(), "provider.tf should not be in pipeline output"
+  assert not (terraform_dir / "variables.tf").exists(), "variables.tf should not be in pipeline output"
 
   # Verify organization Terraform content
   with open(org_tf_file, "r") as f:
@@ -199,13 +200,6 @@ def test_terraform_files_generated(test_data: Dict[str, Any], tmp_path: Path, ca
   assert 'name        = "team-test"' in org_content
   assert 'full_name   = "Test Team"' in org_content
   assert 'description = "Organization for team Test Team (team-test@example.com)"' in org_content
-
-  # Verify provider Terraform content
-  with open(provider_tf_file, "r") as f:
-    provider_content: str = f.read()
-
-  assert 'provider "gitea"' in provider_content
-  assert 'source  = "go-gitea/gitea"' in provider_content
 
   # Verify print output includes Terraform generation
   captured = capsys.readouterr()

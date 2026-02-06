@@ -68,7 +68,7 @@ else
     -H "Content-Type: application/json" \
     -d '{
       "name": "kratix-workflow-token",
-      "scopes": ["write:repository", "write:admin"]
+      "scopes": ["write:repository", "write:admin", "read:user", "write:organization"]
     }')
 
   if echo "$TOKEN_RESPONSE" | grep -q '"sha1"'; then
@@ -120,30 +120,33 @@ else
   exit 1
 fi
 
-echo "🔧 Setting up repository secrets..."
-
-# Configure repository secret for GITEA_ADMIN_TOKEN
-SECRET_RESPONSE=$(gitea_curl -s -X PUT \
-  "$(gitea_local_url)/api/v1/repos/$REPO_OWNER/$REPO_NAME/actions/secrets/GITEA_ADMIN_TOKEN" \
-  -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": "'$GITEA_ADMIN_TOKEN'"
-  }' 2>/dev/null || echo "API_NOT_SUPPORTED")
-
-if echo "$SECRET_RESPONSE" | grep -q "API_NOT_SUPPORTED\|404"; then
-  echo "⚠️  Repository secrets API not supported - will use environment variable in workflow"
-else
-  echo "✅ Repository secret configured successfully"
-fi
-
-# Ensure Actions are enabled
+# Ensure Actions are enabled BEFORE setting secrets
 echo "🚀 Enabling Actions for repository..."
 gitea_curl -s -X PATCH \
   "$(gitea_local_url)/api/v1/repos/$REPO_OWNER/$REPO_NAME" \
   -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
   -H "Content-Type: application/json" \
   -d '{ "has_actions": true }' >/dev/null
+
+echo "🔧 Setting up repository secrets..."
+
+# Configure repository secret for ADMIN_TOKEN_GITEA
+SECRET_PAYLOAD=$(printf '{"data": "%s"}' "$GITEA_ADMIN_TOKEN")
+SECRET_RESPONSE_FILE=$(mktemp)
+SECRET_STATUS=$(gitea_curl -s -o "$SECRET_RESPONSE_FILE" -w '%{http_code}' -X PUT \
+  "$(gitea_local_url)/api/v1/repos/$REPO_OWNER/$REPO_NAME/actions/secrets/ADMIN_TOKEN_GITEA" \
+  -u "$GITEA_USERNAME:$GITEA_PASSWORD" \
+  -H "Content-Type: application/json" \
+  -d "$SECRET_PAYLOAD")
+
+if [ "$SECRET_STATUS" = "201" ] || [ "$SECRET_STATUS" = "204" ]; then
+  echo "✅ Repository secret ADMIN_TOKEN_GITEA configured successfully"
+else
+  echo "❌ Failed to set repository secret (HTTP $SECRET_STATUS)"
+  echo "Response: $(cat "$SECRET_RESPONSE_FILE")"
+  rm -f "$SECRET_RESPONSE_FILE"
+  exit 1
+fi
 
 echo "📄 Initializing repository structure from template..."
 
@@ -169,11 +172,7 @@ cp -R "$SCRIPT_DIR/../repos/kratix/." ./
 
 # Add all files and commit
 git add .
-git commit -m "Initialize Kratix GitOps repository
-
-- Add .gitea/workflows/deploy-organizations.yml for automated Terraform deployment
-- Update README with repository structure and workflow documentation  
-- Repository ready for Team Promise generated configurations"
+git commit -m "Sync to template repository"
 
 echo "🚀 Pushing repository initialization to Gitea..."
 git push origin main
@@ -195,4 +194,3 @@ echo "  GitStateStore status:"
 kubectl get gitstatestore default -o jsonpath='{.status.conditions[0].type}: {.status.conditions[0].status} - {.status.conditions[0].message}' 2>/dev/null || echo "Status pending"
 echo ""
 echo "🎯 Next: Run ./scripts/06-test-teams.sh"
-
