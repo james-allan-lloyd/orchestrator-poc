@@ -19,6 +19,9 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 $SCRIPT_DIR/update-promise.sh
 
+echo "⏳ Waiting for Promise to be ready..."
+kubectl wait --for=condition=Available promise/team --timeout=180s
+
 cd tests
 
 # Check if virtual environment exists
