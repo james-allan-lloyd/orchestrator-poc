@@ -12,8 +12,12 @@ else
   IMAGE_TAG="team-configure:latest"
 fi
 
+# Detect Kind cluster name from current kubectl context (kind-<name> → <name>)
+CLUSTER_NAME=$(kubectl config current-context | sed 's/^kind-//')
+echo "  Using Kind cluster: $CLUSTER_NAME"
+
 docker build -t "$IMAGE_TAG" promises/team-promise/workflows/resource/configure/team-configure/python
-kind load docker-image -n kratix-poc "$IMAGE_TAG"
+kind load docker-image -n "$CLUSTER_NAME" "$IMAGE_TAG"
 
 # Install the Team Promise
 kubectl apply -f promises/team-promise/promise.yaml
