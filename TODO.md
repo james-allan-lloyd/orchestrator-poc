@@ -1,5 +1,6 @@
 # TODO
 
 - [x] connect to git
-- [ ] generate terraform to create teams
-- [ ] testing data integrity
+- [x] generate terraform to create teams
+- [x] testing data integrity
+- [ ] use a proper state store for terraform
