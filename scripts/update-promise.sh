@@ -16,7 +16,15 @@ fi
 CLUSTER_NAME=$(kubectl config current-context | sed 's/^kind-//')
 echo "  Using Kind cluster: $CLUSTER_NAME"
 
-docker build -t "$IMAGE_TAG" promises/team-promise/workflows/resource/configure/team-configure/python
+if [ "${CI:-}" = "true" ]; then
+  docker buildx build \
+    --cache-from type=gha \
+    --cache-to type=gha,mode=max \
+    --load -t "$IMAGE_TAG" \
+    promises/team-promise/workflows/resource/configure/team-configure/python
+else
+  docker build -t "$IMAGE_TAG" promises/team-promise/workflows/resource/configure/team-configure/python
+fi
 kind load docker-image -n "$CLUSTER_NAME" "$IMAGE_TAG"
 
 # Install the Team Promise

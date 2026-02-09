@@ -85,6 +85,9 @@ jobs:
           echo "=== Events (last 30) ==="
           kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Run integration tests
         run: ./scripts/run-integration-tests.sh
         env:
@@ -138,6 +141,9 @@ jobs:
           echo ""
           echo "=== Events (last 30) ==="
           kubectl get events -A --sort-by='.lastTimestamp' | tail -30
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Run end-to-end tests
         run: ./scripts/run-e2e-tests.sh
