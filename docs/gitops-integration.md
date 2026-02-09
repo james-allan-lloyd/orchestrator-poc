@@ -5,6 +5,7 @@ This guide demonstrates how the Team Promise integrates with Gitea as a Git Stat
 ## Overview
 
 When a Team resource is created, Kratix:
+
 1. Executes the Team Promise workflow
 2. Generates Backstage-compatible YAML
 3. Automatically commits the generated IaC to the Gitea repository
@@ -17,6 +18,7 @@ When a Team resource is created, Kratix:
 All Gitea access now uses centralized configuration for consistent SSL handling:
 
 1. Access Gitea via ingress:
+
    ```bash
    # Uses centralized configuration
    source scripts/gitea-config.sh
@@ -26,58 +28,63 @@ All Gitea access now uses centralized configuration for consistent SSL handling:
    ```
 
 2. Get Gitea credentials from Kubernetes:
+
    ```bash
    # Get username
    kubectl get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d
-   
-   # Get password  
+
+   # Get password
    kubectl get secret gitea-credentials -o jsonpath='{.data.password}' | base64 -d
    ```
 
-3. Open https://localhost:8443 in your browser and login with the retrieved credentials
+3. Open `http://localhost:8080` in your browser and login with the retrieved credentials
 
 ### Repository Location
 
-- Repository URL: https://localhost:8443/gitea_admin/kratix
+- Repository URL: `http://localhost:8080/gitea_admin/kratix`
 - Generated team files are stored in the repository root
 
 ## Git Repository Structure Options
 
-Kratix supports different filepath modes for organizing files in the Git repository to match GitOps tool requirements:
+Kratix supports different filepath modes for organizing files in the Git
+repository to match GitOps tool requirements:
 
-### AggregatedYAML Mode (Current Configuration)
-All team resources are consolidated into a single YAML file:
+### Flat (None) Mode (Current configuration)
+
+Files are written directly to the specified path:
+
 ```
 kratix/
-└── teams/
-    └── backstage-teams.yaml       # All Backstage Group definitions
+├── backstage-team-{id}.yaml
+├── backstage-team-{another-id}.yaml
+└── backstage-team-{third-id}.yaml
 ```
 
 ### Nested Mode (Default)
+
 Each resource creates its own directory structure:
+
 ```
 kratix/
-├── teams/
-│   ├── team-{id}/
-│   │   └── backstage-team-{id}.yaml
-│   └── team-{another-id}/
-│       └── backstage-team-{another-id}.yaml
+├── team-{id}/
+│   └── backstage-team-{id}.yaml
+└── team-{another-id}/
+    └── backstage-team-{another-id}.yaml
 ```
 
-### Flat Mode
-Files are written directly to the specified path:
+### AggregatedYAML Mode
+
+All team resources are consolidated into a single YAML file:
+
 ```
 kratix/
-└── backstage-catalog/
-    ├── backstage-team-{id}.yaml
-    ├── backstage-team-{another-id}.yaml
-    └── backstage-team-{third-id}.yaml
+└── backstage-teams.yaml       # All Backstage Group definitions
 ```
 
 ## GitOps Tool Compatibility
 
 - **AggregatedYAML**: Best for tools that prefer single manifest files
-- **Nested**: Good for tools that handle directory structures well  
+- **Nested**: Good for tools that handle directory structures well
 - **Flat**: Optimal for Backstage catalog discovery and simple GitOps tools
 
 ## Configuring Repository Structure
@@ -85,6 +92,7 @@ kratix/
 To change the file organization mode, update the Destination configuration:
 
 ### For AggregatedYAML (Single File)
+
 ```yaml
 apiVersion: platform.kratix.io/v1alpha1
 kind: Destination
@@ -101,13 +109,14 @@ spec:
 ```
 
 ### For Flat Structure (Individual Files)
+
 ```yaml
 apiVersion: platform.kratix.io/v1alpha1
 kind: Destination
 metadata:
   name: gitea-destination-flat
 spec:
-  path: backstage-catalog
+  path: / # subdirectories don't work for mode: none, deletes will fail.
   filepath:
     mode: none
   stateStoreRef:
@@ -120,32 +129,18 @@ spec:
 ## Example Workflow
 
 1. Create a team resource:
+
    ```bash
    kubectl apply -f promises/team-promise/example-resource.yaml
    ```
 
 2. Check team status:
+
    ```bash
    kubectl get teams
    ```
 
 3. View generated files in Gitea:
-   - Navigate to https://localhost:8443/gitea_admin/kratix
+   - Navigate to `http://localhost:8080/gitea_admin/kratix`
    - Browse the repository for generated team files
 
-## GitOps Consumption
-
-The generated YAML files in Gitea can be consumed by:
-
-- **ArgoCD**: Configure ArgoCD to watch the Gitea repository
-- **Flux**: Set up Flux to sync from the Gitea repository  
-- **Custom GitOps tools**: Use git webhooks or polling to detect changes
-- **Backstage**: Configure Backstage to read catalog entries from the repository
-
-## Integration Benefits
-
-- **Version Control**: All generated IaC is versioned in Git
-- **Auditability**: Complete history of infrastructure changes
-- **GitOps Compatibility**: Standard Git repository for downstream tools
-- **Multi-tenancy**: Separate directories for different teams/resources
-- **Security**: Git-based access controls and authentication

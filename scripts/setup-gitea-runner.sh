@@ -64,33 +64,47 @@ fi
 
 echo "✅ Found registration token: ${GITEA_RUNNER_REGISTRATION_TOKEN:0:8}..."
 
-# Pre-flight checks for Podman functionality
+# Pre-flight checks for container runtime
 echo "🔍 Running pre-flight checks..."
 
-# Check if Podman socket exists
+# Detect container runtime socket (Podman or Docker)
+CONTAINER_SOCKET=""
 PODMAN_SOCKET="/run/user/$(id -u)/podman/podman.sock"
-if [ ! -S "$PODMAN_SOCKET" ]; then
-  echo "❌ Podman socket not found at $PODMAN_SOCKET"
-  echo "🔧 Starting Podman socket service..."
-  systemctl --user start podman.socket
+DOCKER_SOCKET="/var/run/docker.sock"
+
+if [ -S "$PODMAN_SOCKET" ]; then
+  CONTAINER_SOCKET="$PODMAN_SOCKET"
+  echo "✅ Podman socket available at $CONTAINER_SOCKET"
+elif [ -S "$DOCKER_SOCKET" ]; then
+  CONTAINER_SOCKET="$DOCKER_SOCKET"
+  echo "✅ Docker socket available at $CONTAINER_SOCKET"
+else
+  # Try starting Podman socket as fallback
+  echo "⚠️  No container socket found, trying to start Podman socket..."
+  systemctl --user start podman.socket 2>/dev/null || true
   sleep 2
 
-  if [ ! -S "$PODMAN_SOCKET" ]; then
-    echo "❌ Failed to create Podman socket. Please run:"
-    echo "  systemctl --user start podman.socket"
+  if [ -S "$PODMAN_SOCKET" ]; then
+    CONTAINER_SOCKET="$PODMAN_SOCKET"
+    echo "✅ Podman socket started at $CONTAINER_SOCKET"
+  elif [ -S "$DOCKER_SOCKET" ]; then
+    CONTAINER_SOCKET="$DOCKER_SOCKET"
+    echo "✅ Docker socket available at $CONTAINER_SOCKET"
+  else
+    echo "❌ No container runtime socket found."
+    echo "  Podman: run 'systemctl --user start podman.socket'"
+    echo "  Docker: ensure Docker daemon is running"
     exit 1
   fi
 fi
 
-echo "✅ Podman socket available at $PODMAN_SOCKET"
-
-# Test Podman functionality
-echo "🧪 Testing Podman functionality..."
+# Test container runtime functionality
+echo "🧪 Testing container runtime..."
 if ! docker version >/dev/null 2>&1; then
-  echo "❌ Podman/Docker command not working"
+  echo "❌ Container runtime (docker/podman) command not working"
   exit 1
 fi
-echo "✅ Podman/Docker command working"
+echo "✅ Container runtime working"
 
 # Check configuration file
 if [ ! -f "$CONFIG_DIR/config.yaml" ]; then
@@ -104,8 +118,8 @@ echo "🛑 Stopping any existing runner..."
 docker stop $CONTAINER_NAME 2>/dev/null || true
 docker rm $CONTAINER_NAME 2>/dev/null || true
 
-# Enhanced configuration with Podman socket fix
-echo "🐳 Starting runner with Podman configuration..."
+# Start runner with detected container runtime
+echo "🐳 Starting runner with $CONTAINER_SOCKET..."
 docker run -d \
   --name $CONTAINER_NAME \
   --restart unless-stopped \
@@ -113,7 +127,7 @@ docker run -d \
   -e GITEA_RUNNER_REGISTRATION_TOKEN="$GITEA_RUNNER_REGISTRATION_TOKEN" \
   -e GITEA_RUNNER_NAME="$RUNNER_NAME" \
   -e CONFIG_FILE="/etc/act_runner/config.yaml" \
-  -v "$PODMAN_SOCKET:/var/run/docker.sock:Z" \
+  -v "$CONTAINER_SOCKET:/var/run/docker.sock:Z" \
   -v "$CONFIG_DIR:/etc/act_runner:ro" \
   -v gitea-runner-data:/data \
   --network host \
@@ -121,7 +135,7 @@ docker run -d \
   --security-opt label=disable \
   $RUNNER_IMAGE
 
-echo "✅ Runner started with Podman configuration"
+echo "✅ Runner started"
 
 echo "⏳ Waiting for runner to register..."
 sleep 15

@@ -4,11 +4,21 @@ This tutorial demonstrates how to use the Team Promise to create team resources 
 
 ## Prerequisites
 
-- Kind cluster with Kratix installed (see [README Setup section](../README.md#setup))
+- Kind cluster with Kratix installed (see [README Setup section](../README.md#getting-started))
 - Docker or Podman for building container images
 - `kubectl` configured to access the cluster
 - Go installed (for Kratix CLI)
 - Python virtual environment for testing (see [README Development section](../README.md#development))
+
+### Quick Start
+
+For a fully working environment with Gitea, SSH, and Actions already configured, run the automated build first:
+
+```bash
+./scripts/build-poc.sh
+```
+
+This runs stages 1-5 and sets up everything you need. You can then skip ahead to [Using the Team Promise](#using-the-team-promise) below.
 
 ## Setup Instructions
 
@@ -52,6 +62,7 @@ kubectl get promises
 ```
 
 Expected output:
+
 ```
 NAME   STATUS      KIND   API VERSION                   VERSION
 team   Available   Team   platform.kratix.io/v1alpha1   v0.0.1
@@ -105,6 +116,7 @@ kubectl get team my-team -o yaml
 ```
 
 The team should show status "Reconciled" when processing is complete:
+
 ```
 NAME      MESSAGE              STATUS
 my-team   Resource requested   Reconciled
@@ -135,6 +147,7 @@ kubectl get work $WORK_NAME -o jsonpath='{.spec.workloadGroups[0].workloads[0].c
 ```
 
 Expected output:
+
 ```yaml
 apiVersion: backstage.io/v1alpha1
 kind: Group
@@ -259,3 +272,4 @@ This YAML can be committed to a Backstage catalog repository to register the tea
 2. **Extend the Promise**: Add more team properties like contact information, tags, or parent/child relationships
 3. **Add Validation**: Enhance the CRD schema with validation rules for team IDs and names
 4. **Multiple Outputs**: Generate additional resources like namespaces, RBAC, or monitoring configurations alongside the Backstage entry
+

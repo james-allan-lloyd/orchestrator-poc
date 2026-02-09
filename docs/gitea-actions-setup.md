@@ -7,24 +7,16 @@ This guide walks you through setting up an enhanced Gitea installation with Acti
 - Kind cluster running
 - Docker installed and running on host machine
 - kubectl configured to access the cluster
-- Port 8443 available for port forwarding
+- Port 8080 available (used by Kind ingress for HTTP access to Gitea)
 - openssl available for generating random secrets
 
-## SSL/TLS Configuration
+## Configuration
 
-All Gitea scripts now use centralized SSL configuration via `scripts/gitea-config.sh`. This allows easy switching between secure and insecure modes:
-
-- **Development mode** (default): Uses self-signed certificates with SSL verification disabled
-- **Production mode**: Uses proper SSL certificates with full verification
-
-To switch to production mode:
-```bash
-# Edit scripts/gitea-config.sh and change:
-export GITEA_SSL_SECURE_MODE="true"
-```
+All Gitea scripts use centralized configuration via `scripts/gitea-config.sh`. In development mode (default), Gitea is accessible at `http://localhost:8080` via Kind ingress — no port-forwarding required.
 
 The centralized configuration handles:
-- URL generation (localhost:8443 for port-forwarding)
+
+- URL generation (`http://localhost:8080` for local access)
 - SSL certificate verification flags
 - Git SSL settings for repository operations
 - Curl command SSL options
@@ -32,123 +24,114 @@ The centralized configuration handles:
 ## Enhanced Gitea Installation
 
 Our enhanced Gitea setup includes:
+
 - **Actions enabled** (unlike the default Kratix installation)
 - **Persistent storage** (5GB PVC instead of in-memory)
 - **Secure random credentials** (generated automatically)
 - **Environment variable configuration** (no hardcoded secrets)
 
-### Deploy Enhanced Gitea
+### Deploy Gitea
+
+The recommended approach is to use the automated build:
 
 ```bash
-./scripts/deploy-gitea-enhanced.sh
+# Full automated setup (all 6 stages)
+./scripts/build-poc.sh
+
+# Or run only the Gitea stage:
+./scripts/03-setup-gitea.sh
 ```
 
-This script will:
+Stage 3 (`03-setup-gitea.sh`) will:
+
 1. Generate secure random credentials and tokens
-2. Remove any existing Gitea installation
-3. Deploy the enhanced version with Actions enabled
-4. Wait for the deployment to be ready
-5. Display connection information and credentials
+2. Deploy Gitea via Helm with Actions enabled
+3. Set up and register the Actions runner
+4. Create a test repository for validation
+5. Wait for the deployment to be ready
 
 ### Key Differences from Standard Installation
 
-| Feature | Standard Kratix Install | Enhanced Install |
-|---------|------------------------|------------------|
-| Actions | Disabled | **Enabled** |
-| Storage | In-memory (lost on restart) | **5GB Persistent Volume** |
-| Credentials | Hardcoded | **Randomly generated** |
-| Configuration | ConfigMap | **Environment variables** |
-| Security Tokens | Hardcoded | **Randomly generated per deployment** |
+| Feature         | Standard Kratix Install     | Enhanced Install                        |
+| --------------- | --------------------------- | --------------------------------------- |
+| Actions         | Disabled                    | **Enabled**                             |
+| Storage         | In-memory (lost on restart) | **Postgres with 5GB Persistent Volume** |
+| Credentials     | Hardcoded                   | **Randomly generated**                  |
+| Configuration   | ConfigMap                   | **Environment variables**               |
+| Security Tokens | Hardcoded                   | **Randomly generated per deployment**   |
 
 ## Step-by-Step Setup
 
-### 1. Get Registration Token
+### Automated (Recommended)
 
-The runner needs a registration token from Gitea. You have two options:
+The `03-setup-gitea.sh` script handles credential generation, Helm install, runner registration, and test repo creation in one step:
 
-#### Option A: Manual Token Creation (Recommended)
+```bash
+./scripts/03-setup-gitea.sh
+```
 
-1. Start port forward to Gitea:
+### Manual Setup (Fallback)
+
+If you need to set up the runner separately:
+
+#### 1. Get Registration Token
+
+The `setup-gitea-runner.sh` script automatically obtains a registration token
+via the Gitea API using the existing admin credentials. No manual token
+creation is needed.
+
+If automatic token creation fails, you can create one manually:
+
+1. Open `http://localhost:8080` in your browser
+2. Login with Gitea admin credentials:
+
    ```bash
-   kubectl port-forward -n gitea svc/gitea-http 8443:443
-   ```
-
-2. Open https://localhost:8443 in your browser
-3. Login with Gitea admin credentials:
-   ```bash
-   # Get credentials
    kubectl get secret gitea-credentials -o jsonpath='{.data.username}' | base64 -d
    kubectl get secret gitea-credentials -o jsonpath='{.data.password}' | base64 -d
    ```
 
-4. Navigate to **Admin Panel** → **Actions** → **Runners**
-5. Click **"Create registration token"**
-6. Copy the generated token
+3. Navigate to **Admin Panel** → **Actions** → **Runners**
+4. Click **"Create registration token"** and copy the token
 
-#### Option B: API Token Creation (if supported)
-
-Some Gitea versions support API token creation. The setup script will attempt this automatically.
-
-### 2. Setup the Runner
-
-1. Export the registration token:
-   ```bash
-   export GITEA_RUNNER_REGISTRATION_TOKEN='your_token_here'
-   ```
-
-2. Run the setup script:
-   ```bash
-   ./scripts/setup-gitea-runner.sh
-   ```
-
-The script will:
-- Set up port forwarding to Gitea
-- Start the runner container (trying non-privileged first, falling back to privileged if needed)
-- Register the runner with Gitea
-- Display status and useful commands
-
-### 3. Create Test Repository
-
-Create a test repository to verify the runner works:
+#### 2. Setup the Runner
 
 ```bash
-./scripts/create-test-repo.sh
+./scripts/setup-gitea-runner.sh
 ```
 
-This creates a repository with test workflows that verify:
-- Basic runner functionality
-- Docker availability
-- Terraform tools
-- Organization creation simulation
+The script will:
+
+- Detect the available container runtime (Podman or Docker)
+- Obtain or reuse a registration token via the Gitea API
+- Start the runner container with the appropriate socket mount
+- Register the runner with Gitea
+- Display status and useful commands
 
 ## Runner Configuration Details
 
 ### Container Setup
 
 The runner container is configured with:
+
 - **Image**: `gitea/act_runner:latest`
 - **Network**: Host networking for Gitea connectivity
-- **Volumes**: 
-  - Docker socket for container spawning
+- **Volumes**:
+  - Container runtime socket (Podman or Docker) mounted as `/var/run/docker.sock`
+  - Runner config from `runner-config/config.yaml`
   - Persistent data volume for runner state
 - **Environment**:
-  - `GITEA_INSTANCE_URL`: https://localhost:8443 (port-forwarded)
-  - `GITEA_RUNNER_REGISTRATION_TOKEN`: From Gitea admin panel
+  - `GITEA_INSTANCE_URL`: Set from `gitea-config.sh` (default: `http://localhost:8080`)
+  - `GITEA_RUNNER_REGISTRATION_TOKEN`: Obtained automatically via Gitea API
   - `GITEA_RUNNER_NAME`: gitea-runner-local
 
-### Privilege Modes
+### Container Runtime Detection
 
-The script attempts two modes:
+The setup script detects the available container runtime:
 
-1. **Non-privileged mode** (preferred):
-   - Uses Docker socket sharing
-   - Adds host.docker.internal mapping
-   - More secure but may not work in all environments
+- **Podman** (default on Fedora/RHEL): Uses the Podman socket at `/run/user/<uid>/podman/podman.sock`
+- **Docker** (CI environments, Ubuntu): Uses the Docker socket at `/var/run/docker.sock`
 
-2. **Privileged mode** (fallback):
-   - Full container privileges
-   - Required for some Docker-in-Docker scenarios
-   - Less secure but more compatible
+The script automatically selects the correct socket path based on what's available.
 
 ## Testing the Setup
 
@@ -159,12 +142,12 @@ The script attempts two modes:
 docker logs -f gitea-actions-runner
 
 # Check if runner is registered in Gitea
-# Visit: https://localhost:8443/admin/actions/runners
+# Visit: http://localhost:8080/admin/actions/runners
 ```
 
 ### 2. Trigger Test Workflow
 
-1. Visit the test repository: https://localhost:8443/gitea_admin/actions-test
+1. Visit the test repository: `http://localhost:8080/gitea_admin/actions-test`
 2. Go to **Actions** tab
 3. Either:
    - Push a commit to trigger the workflow
@@ -173,6 +156,7 @@ docker logs -f gitea-actions-runner
 ### 3. Monitor Execution
 
 Watch the workflow execution in the Gitea UI to verify:
+
 - Runner picks up jobs
 - Docker commands work
 - Terraform tools are available
@@ -182,7 +166,8 @@ Watch the workflow execution in the Gitea UI to verify:
 
 ### Runner Not Connecting
 
-1. **Check port forwarding**:
+1. **Check Gitea accessibility**:
+
    ```bash
    # Test connection (SSL options handled by central config)
    source scripts/gitea-config.sh
@@ -190,10 +175,12 @@ Watch the workflow execution in the Gitea UI to verify:
    ```
 
 2. **Verify registration token**:
+
    - Ensure token is not expired
    - Generate a new token if needed
 
 3. **Check runner logs**:
+
    ```bash
    docker logs gitea-actions-runner
    ```
@@ -201,6 +188,7 @@ Watch the workflow execution in the Gitea UI to verify:
 ### Workflow Failures
 
 1. **Docker permission issues**:
+
    - Try restarting runner in privileged mode
    - Check Docker socket permissions
 
@@ -208,32 +196,44 @@ Watch the workflow execution in the Gitea UI to verify:
    - Ensure host networking is working
    - Verify DNS resolution
 
+### Load Balancing / Rootless Kind
+
+If you're running Kind with rootless Podman, port mappings and ingress may not work out of the box. This can cause Gitea to be unreachable at `http://localhost:8080` even though the cluster is running. See the [Kind rootless guide](https://kind.sigs.k8s.io/docs/user/rootless/) for the required cgroup delegation, socket, and networking setup.
+
 ### Common Issues
 
-| Issue | Solution |
-|-------|----------|
-| "Runner not found" | Re-register with new token |
-| Docker permission denied | Use privileged mode |
-| Network timeout | Check port forwarding |
-| SSL certificate error | Verify -k flag in curl commands |
+| Issue                    | Solution                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| "Runner not found"       | Re-register with new token                                                                                   |
+| Docker permission denied | Use privileged mode                                                                                          |
+| Network timeout          | Verify Kind cluster and ingress are running                                                                  |
+| SSL certificate error    | Check `GITEA_SSL_SECURE_MODE` in gitea-config.sh                                                            |
+| Port 8080 not reachable  | With rootless Podman, see [Kind rootless guide](https://kind.sigs.k8s.io/docs/user/rootless/) for networking |
 
 ## Integration with Organization Workflow
 
 Once the runner is working, it can execute our organization creation pipeline:
 
 1. **Team Promise** generates Terraform files in Git repository
-2. **Gitea Actions** detects changes to `terraform/` directory  
+2. **Gitea Actions** detects changes to `terraform/` directory
 3. **Runner** executes the `deploy-organizations.yml` workflow
 4. **Terraform** creates organizations in Gitea via provider
 
 The complete GitOps flow:
+
 ```
 Team Resource → Kratix → Git → Gitea Actions → Runner → Terraform → Gitea Org
 ```
 
 ## Cleanup
 
-To stop and remove the runner:
+To tear down the entire POC environment (cluster, runner, and all resources):
+
+```bash
+./scripts/cleanup-poc.sh
+```
+
+To stop and remove only the runner:
 
 ```bash
 # Stop runner
@@ -244,7 +244,5 @@ docker rm gitea-actions-runner
 
 # Remove data volume (optional)
 docker volume rm gitea-runner-data
-
-# Stop port forward
-# Kill the port-forward process shown in setup output
 ```
+

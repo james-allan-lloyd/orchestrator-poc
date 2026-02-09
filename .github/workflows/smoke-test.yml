@@ -1,0 +1,65 @@
+name: Smoke Test - Full POC Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/**'
+      - 'manifests/**'
+      - 'promises/**'
+      - 'repos/**'
+      - 'runner-config/**'
+
+jobs:
+  smoke-test:
+    name: Full POC Build & Teardown
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Kind
+      run: |
+        [ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.13.0'
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+
+    - name: Run full POC build
+      run: ./scripts/build-poc.sh
+
+    - name: Verify POC resources
+      run: |
+        echo "=== Nodes ==="
+        kubectl get nodes
+
+        echo "=== Kratix Platform ==="
+        kubectl get pods -n kratix-platform-system
+
+        echo "=== Gitea ==="
+        kubectl get pods -n gitea
+
+        echo "=== GitStateStore ==="
+        kubectl get gitstatestore
+
+        echo "=== Destinations ==="
+        kubectl get destinations
+
+        echo "=== Promises ==="
+        kubectl get promises
+
+        echo "=== Teams ==="
+        kubectl get teams
+
+    - name: Run cleanup
+      if: always()
+      run: ./scripts/cleanup-poc.sh

@@ -42,6 +42,8 @@ The POC implements a workflow where:
 - SSH client
 - OpenSSL (for certificate generation)
 
+> **Rootless Podman / Kind:** If you're running Kind with rootless Podman, you may hit issues with port mappings and load balancing. See the [Kind rootless guide](https://kind.sigs.k8s.io/docs/user/rootless/) for the required setup steps.
+
 ### Quick Start - Automated 6-Stage Build
 
 For a complete automated setup, run:
@@ -55,50 +57,62 @@ This runs all 6 stages in sequence with proper verification at each step.
 ### Manual Stage-by-Stage Setup
 
 #### Stage 1: Cluster Preparation
+
 ```bash
 ./scripts/01-setup-cluster.sh
 ```
+
 - Creates Kind cluster with ingress controller
 - Configures port mappings for SSH (30222) and HTTP (80/443)
 - Installs NGINX ingress controller
 
 #### Stage 2: Kratix Installation
+
 ```bash
 ./scripts/02-install-kratix.sh
 ```
+
 - Installs Kratix platform components
 - Applies UID 65534 patch for Git operations
 - Removes default BucketStateStore destination
 
 #### Stage 3: Gitea + Actions Runner
+
 ```bash
 ./scripts/03-setup-gitea.sh
 ```
+
 - Deploys Gitea via Helm with PostgreSQL and SSH
 - Generates secure credentials and tokens
 - Sets up and registers Actions runner
 - Creates test repository for validation
 
 #### Stage 4: SSH Git Destination
+
 ```bash
 ./scripts/04-configure-ssh-gitea.sh
 ```
-- Generates SSH keys for GitStateStore authentication
-- Configures SSH GitStateStore with proper authentication
+
+- Generates SSH keys for Kratix GitStateStore authentication
+- Configures SSH Kratix GitStateStore with proper authentication
 - Verifies SSH connectivity and readiness
 
 #### Stage 5: Kratix Repository + Pipeline
+
 ```bash
 ./scripts/05-setup-kratix-repo.sh
 ```
+
 - Sets up kratix repository for infrastructure code
 - Configures Terraform pipeline and secrets
 - Enables Actions for automated workflows
 
 #### Stage 6: Promise Installation + Testing
+
 ```bash
 ./scripts/06-test-teams.sh
 ```
+
 - Installs Team Promise
 - Tests team creation, update, and deletion lifecycle
 - Verifies GitOps workflow and Terraform execution
@@ -106,6 +120,7 @@ This runs all 6 stages in sequence with proper verification at each step.
 ### Verification
 
 After each stage, verify the setup:
+
 - **Stage 1**: `kubectl get nodes` and `kubectl get pods -n ingress-nginx`
 - **Stage 2**: `kubectl get pods -n kratix-platform-system`
 - **Stage 3**: Visit `http://localhost:8080` and check runner with `docker ps`
@@ -125,16 +140,25 @@ After each stage, verify the setup:
 │               ├── configure.py           # Main configure script
 │               └── terraform_templates/   # Terraform templates
 ├── manifests/             # Kubernetes manifests
-│   ├── gitstatestore.yaml            # Git State Store configuration
-│   └── gitea-install-enhanced.yaml   # Enhanced Gitea with Actions
+│   ├── kind-cluster-config.yaml     # Kind cluster with ingress + port mappings
+│   ├── gitea-helm-values.yaml       # Gitea Helm chart values
+│   ├── gitea-ssh-statestore.yaml    # SSH GitStateStore configuration
+│   ├── gitea-https-statestore.yaml  # HTTPS GitStateStore configuration (not used by default)
+│   ├── git-destination.yaml         # Nested filepath Destination (not used by default)
+│   └── git-destination-flat.yaml    # Flat filepath Destination
 ├── scripts/               # Setup and utility scripts
-│   ├── generate-gitea-credentials.sh # Enhanced credential generation
-│   ├── deploy-gitea-enhanced.sh      # Deploy enhanced Gitea
-│   ├── setup-gitea-runner.sh         # Actions runner setup
-│   ├── get-runner-token.sh           # Get registration token
-│   ├── create-test-repo.sh           # Create test repository
-│   ├── run-tests.sh                  # Unit test runner
-│   └── run-contract-tests.sh         # Contract test runner
+│   ├── build-poc.sh                 # Automated 6-stage build
+│   ├── cleanup-poc.sh               # Full teardown
+│   ├── 01-setup-cluster.sh          # Stage 1: Kind cluster + ingress
+│   ├── 02-install-kratix.sh         # Stage 2: Kratix platform
+│   ├── 03-setup-gitea.sh            # Stage 3: Gitea + Actions runner
+│   ├── 04-configure-ssh-gitea.sh    # Stage 4: SSH Git destination
+│   ├── 05-setup-kratix-repo.sh      # Stage 5: Kratix repo + pipeline
+│   ├── 06-test-teams.sh             # Stage 6: Promise install + testing
+│   ├── gitea-config.sh              # Centralized Gitea configuration
+│   ├── setup-gitea-runner.sh        # Actions runner setup
+│   ├── run-tests.sh                 # Unit test runner
+│   └── run-contract-tests.sh        # Contract test runner
 ├── tests/                 # Comprehensive test suite
 │   ├── unit/              # Unit tests for configure scripts
 │   ├── contract/          # API and format validation tests
@@ -142,16 +166,16 @@ After each stage, verify the setup:
 │   └── e2e/               # End-to-end workflow tests
 ├── docs/                  # Documentation
 │   ├── gitops-integration.md    # GitOps workflow guide
-│   └── gitea-actions-setup.md   # Actions runner setup guide
-├── .gitea/workflows/      # Gitea Actions workflows
-│   └── deploy-organizations.yml # Organization deployment workflow
+│   ├── gitea-actions-setup.md   # Actions runner setup guide
+│   └── tutorial.md              # Team Promise tutorial
 └── repos/
     ├── test-actions/     # Test repository for Actions validation
     │   ├── .gitea/workflows/
     │   └── README.md
     └── kratix/           # Base IaC repository for the platform
         ├── .gitea/workflows/
-    │   │   └── deploy-organizations.yml # Organization deployment workflow
+        │   └── deploy-organizations.yml
+        ├── terraform/
         └── README.md
 ```
 
@@ -159,7 +183,8 @@ After each stage, verify the setup:
 
 ### Team Promise
 
-The Team Promise provides "Team provisioning as a service" functionality with automatic organization creation:
+The Team Promise provides "Team provisioning as a service" functionality with
+automatic organization creation:
 
 - Creates team resources with unique ID, name, and optional email
 - Generates Backstage-compatible team definitions
@@ -229,18 +254,16 @@ deactivate
 
 ### Gitea Actions Testing
 
-Test the complete CI/CD pipeline with the enhanced Gitea setup:
+Test the complete CI/CD pipeline:
 
 ```bash
-# Deploy enhanced Gitea with Actions enabled
-./scripts/deploy-gitea-enhanced.sh
+# Automated: runs all stages including Gitea + runner setup
+./scripts/build-poc.sh
 
-# Set up Actions runner
-./scripts/get-runner-token.sh
-./scripts/setup-gitea-runner.sh
-
-# Create test repository to validate runner functionality
-./scripts/create-test-repo.sh
+# Or manually run individual stages:
+./scripts/03-setup-gitea.sh          # Deploy Gitea with Actions enabled
+./scripts/04-configure-ssh-gitea.sh  # Configure SSH Git destination
+./scripts/05-setup-kratix-repo.sh    # Set up kratix repo + pipeline
 ```
 
 The test repository includes workflows that validate:
@@ -249,6 +272,18 @@ The test repository includes workflows that validate:
 - Docker/container execution capabilities
 - Terraform tools availability
 - Organization creation workflow simulation
+
+### Cleanup
+
+To tear down the entire POC environment:
+
+```bash
+./scripts/cleanup-poc.sh
+```
+
+This removes the Kind cluster, runner containers, and all associated resources.
+
+---
 
 This is an active proof of concept. Contributions and feedback are welcome as
 we explore the capabilities of Kratix for multi-repository infrastructure
