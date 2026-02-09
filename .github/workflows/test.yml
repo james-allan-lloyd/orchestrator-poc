@@ -139,27 +139,10 @@ jobs:
           echo "=== Events (last 30) ==="
           kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
-      - name: Install test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r tests/requirements.txt
-
-      - name: Build team-configure container
-        run: |
-          cd promises/team-promise/workflows/resource/configure/team-configure/python
-          docker build -t team-configure:test .
-
-      - name: Load container image into Kind
-        run: |
-          kind load docker-image team-configure:test --name kratix-e2e
-
       - name: Run end-to-end tests
-        run: |
-          cd tests
-          python -m pytest e2e/ -v --tb=short -s
+        run: ./scripts/run-e2e-tests.sh
         env:
           KUBECONFIG: /home/runner/.kube/config
-          CONTAINER_IMAGE: team-configure:test
 
   lint-and-validate:
     name: Lint and Validate
@@ -191,7 +174,9 @@ jobs:
       - name: Check Python syntax
         run: |
           python -m py_compile promises/team-promise/workflows/resource/configure/team-configure/python/scripts/configure.py
+          python -m py_compile tests/conftest.py
           python -m py_compile tests/unit/test_configure.py
           python -m py_compile tests/integration/test_promise_deployment.py
+          python -m py_compile tests/integration/test_workflow_execution.py
           python -m py_compile tests/contract/test_api_schema.py
           python -m py_compile tests/e2e/test_team_provisioning.py

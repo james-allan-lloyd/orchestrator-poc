@@ -1,259 +1,298 @@
-#!/usr/bin/env python3
+"""End-to-end tests for Team Promise lifecycle.
 
-import unittest
-import yaml
+These tests go beyond integration tests by verifying the full lifecycle as an
+ordered sequence: create -> reconcile -> verify Work outputs -> update ->
+verify update -> delete -> verify cleanup.
+
+Prerequisites: A running Kind cluster with Kratix installed and the Team Promise
+deployed (run ./scripts/run-e2e-tests.sh which handles this).
+"""
+
+import base64
+import gzip
 import time
-import os
-import tempfile
-from kubernetes import client, config
+from typing import Any
+
+import pytest
+import yaml
 from kubernetes.client.rest import ApiException
 
-class TestTeamProvisioning(unittest.TestCase):
-    
-    @classmethod
-    def setUpClass(cls):
-        """Set up Kubernetes client and test environment"""
-        try:
-            config.load_incluster_config()
-        except:
-            config.load_kube_config()
-        
-        cls.custom_api = client.CustomObjectsApi()
-        cls.core_api = client.CoreV1Api()
-        cls.extensions_api = client.ApiextensionsV1Api()
-        
-        # Unique test identifier
-        cls.test_id = f"e2e-{int(time.time())}"
-    
-    def setUp(self):
-        """Set up individual test"""
-        self.promise_deployed = False
-        self.team_created = False
-    
-    def tearDown(self):
-        """Clean up after each test"""
-        # Clean up team resource
-        if self.team_created:
-            try:
-                self.custom_api.delete_namespaced_custom_object(
-                    group="platform.kratix.io",
-                    version="v1alpha1",
-                    namespace="default",
-                    plural="teams",
-                    name=f"test-team-{self.test_id}"
-                )
-            except ApiException:
-                pass
-        
-        # Clean up promise
-        if self.promise_deployed:
-            try:
-                self.custom_api.delete_cluster_custom_object(
-                    group="platform.kratix.io",
-                    version="v1alpha1",
-                    plural="promises",
-                    name="team"
-                )
-            except ApiException:
-                pass
-    
-    def test_complete_team_provisioning_workflow(self):
-        """Test the complete team provisioning workflow end-to-end"""
-        
-        # Step 1: Deploy the Team Promise
-        promise_path = "/home/james/src/orchestrator-poc/promises/team-promise/promise.yaml"
-        with open(promise_path, 'r') as f:
-            promise_def = yaml.safe_load(f)
-        
-        try:
-            self.custom_api.create_cluster_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                plural="promises",
-                body=promise_def
-            )
-            self.promise_deployed = True
-            
-            # Wait for Promise to be ready
-            self._wait_for_promise_ready("team")
-            
-        except ApiException as e:
-            if e.status == 409:  # Already exists
-                self.promise_deployed = True
-            else:
-                self.fail(f"Failed to deploy Promise: {e}")
-        
-        # Step 2: Verify CRD is created
-        try:
-            crd = self.extensions_api.read_custom_resource_definition(
-                name="teams.platform.kratix.io"
-            )
-            self.assertIsNotNone(crd)
-        except ApiException as e:
-            self.fail(f"Team CRD not found after Promise deployment: {e}")
-        
-        # Step 3: Create a Team resource
-        team_resource = {
-            'apiVersion': 'platform.kratix.io/v1alpha1',
-            'kind': 'Team',
-            'metadata': {
-                'name': f'test-team-{self.test_id}',
-                'namespace': 'default'
-            },
-            'spec': {
-                'id': f'team-{self.test_id}',
-                'name': f'Test Team {self.test_id}'
-            }
-        }
-        
-        try:
-            self.custom_api.create_namespaced_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                namespace="default",
-                plural="teams",
-                body=team_resource
-            )
-            self.team_created = True
-            
-            # Wait for processing
-            time.sleep(30)
-            
-        except ApiException as e:
-            self.fail(f"Failed to create Team resource: {e}")
-        
-        # Step 4: Verify team resource exists and is configured
-        try:
-            team = self.custom_api.get_namespaced_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                namespace="default",
-                plural="teams",
-                name=f'test-team-{self.test_id}'
-            )
-            
-            self.assertEqual(team['spec']['id'], f'team-{self.test_id}')
-            self.assertEqual(team['spec']['name'], f'Test Team {self.test_id}')
-            
-        except ApiException as e:
-            self.fail(f"Failed to retrieve Team resource: {e}")
-        
-        # Step 5: Check for workflow execution
-        # In a real scenario, we would check for:
-        # - Work resources created by Kratix
-        # - Destination processing
-        # - Output artifacts in git repositories
-        # For this POC, we verify the workflow was triggered
-        self._verify_workflow_execution(f'test-team-{self.test_id}')
-    
-    def test_team_with_special_characters(self):
-        """Test team provisioning with special characters in names"""
-        if not self._ensure_promise_deployed():
-            return
-        
-        team_resource = {
-            'apiVersion': 'platform.kratix.io/v1alpha1',
-            'kind': 'Team',
-            'metadata': {
-                'name': f'special-team-{self.test_id}',
-                'namespace': 'default'
-            },
-            'spec': {
-                'id': f'team-special-{self.test_id}',
-                'name': f'Special Team & Co. {self.test_id}'
-            }
-        }
-        
-        try:
-            self.custom_api.create_namespaced_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                namespace="default",
-                plural="teams",
-                body=team_resource
-            )
-            self.team_created = True
-            
-            # Verify creation
-            team = self.custom_api.get_namespaced_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                namespace="default",
-                plural="teams",
-                name=f'special-team-{self.test_id}'
-            )
-            
-            self.assertEqual(team['spec']['name'], f'Special Team & Co. {self.test_id}')
-            
-        except ApiException as e:
-            self.fail(f"Failed to create team with special characters: {e}")
-    
-    def _ensure_promise_deployed(self):
-        """Ensure the Promise is deployed for tests that need it"""
-        try:
-            self.custom_api.get_cluster_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                plural="promises",
-                name="team"
-            )
-            return True
-        except ApiException:
-            self.skipTest("Team Promise not deployed - skipping test")
-            return False
-    
-    def _wait_for_promise_ready(self, promise_name, timeout=60):
-        """Wait for Promise to be ready"""
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                promise = self.custom_api.get_cluster_custom_object(
-                    group="platform.kratix.io",
-                    version="v1alpha1",
-                    plural="promises",
-                    name=promise_name
-                )
-                
-                # Check if Promise is ready (this depends on Kratix status reporting)
-                if promise.get('status'):
-                    return True
-                    
-            except ApiException:
-                pass
-            
-            time.sleep(5)
-        
-        self.fail(f"Promise {promise_name} not ready within {timeout} seconds")
-    
-    def _verify_workflow_execution(self, team_name):
-        """Verify that workflow execution was triggered"""
-        # In a complete implementation, this would:
-        # 1. Check for Work resources created by Kratix
-        # 2. Monitor pipeline execution
-        # 3. Verify output artifacts
-        # 4. Check destination repositories
-        
-        # For now, we just verify the team resource exists
-        # and assume workflow processing occurred
-        try:
-            team = self.custom_api.get_namespaced_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                namespace="default",
-                plural="teams",
-                name=team_name
-            )
-            
-            # Basic verification that the resource exists
-            self.assertIsNotNone(team)
-            
-            # In a real scenario, you might check:
-            # - status.conditions for processing state
-            # - related Work resources
-            # - generated artifacts in git repos
-            
-        except ApiException as e:
-            self.fail(f"Failed to verify workflow execution: {e}")
 
-if __name__ == '__main__':
-    unittest.main()
+KRATIX_GROUP = "platform.kratix.io"
+KRATIX_VERSION = "v1alpha1"
+
+
+# -- helpers ------------------------------------------------------------------
+
+def _wait_for_work(
+  k8s_clients: dict[str, Any],
+  team_name: str,
+  timeout: int = 120,
+) -> dict[str, Any]:
+  """Poll until a Work resource exists for the given team, or timeout."""
+  custom = k8s_clients["custom"]
+  deadline = time.time() + timeout
+
+  while time.time() < deadline:
+    works = custom.list_cluster_custom_object(
+      group=KRATIX_GROUP,
+      version=KRATIX_VERSION,
+      plural="works",
+      label_selector=f"kratix.io/resource-name={team_name}",
+    )
+    items = works.get("items", [])
+    if items:
+      return items[0]
+    time.sleep(5)
+
+  pytest.fail(f"No Work resource found for team '{team_name}' within {timeout}s")
+
+
+def _wait_for_work_gone(
+  k8s_clients: dict[str, Any],
+  team_name: str,
+  timeout: int = 120,
+) -> None:
+  """Poll until no Work resources exist for the given team."""
+  custom = k8s_clients["custom"]
+  deadline = time.time() + timeout
+
+  while time.time() < deadline:
+    works = custom.list_cluster_custom_object(
+      group=KRATIX_GROUP,
+      version=KRATIX_VERSION,
+      plural="works",
+      label_selector=f"kratix.io/resource-name={team_name}",
+    )
+    if not works.get("items"):
+      return
+    time.sleep(5)
+
+  pytest.fail(f"Work resource for team '{team_name}' still exists after {timeout}s")
+
+
+def _wait_for_status(
+  k8s_clients: dict[str, Any],
+  team_name: str,
+  timeout: int = 120,
+) -> dict[str, Any]:
+  """Poll until the Team resource has a status message."""
+  custom = k8s_clients["custom"]
+  deadline = time.time() + timeout
+
+  while time.time() < deadline:
+    team = custom.get_namespaced_custom_object(
+      group=KRATIX_GROUP,
+      version=KRATIX_VERSION,
+      namespace="default",
+      plural="teams",
+      name=team_name,
+    )
+    if team.get("status", {}).get("message"):
+      return team
+    time.sleep(5)
+
+  return team
+
+
+def _decode_workload(workload: dict[str, Any]) -> str:
+  """Decode a Kratix workload content (base64 + gzip)."""
+  raw = base64.b64decode(workload["content"])
+  return gzip.decompress(raw).decode("utf-8")
+
+
+def _extract_workloads(work: dict[str, Any]) -> dict[str, str]:
+  """Return a {filepath: decoded_content} mapping from a Work resource."""
+  result: dict[str, str] = {}
+  for group in work.get("spec", {}).get("workloadGroups", []):
+    for wl in group.get("workloads", []):
+      result[wl["filepath"]] = _decode_workload(wl)
+  return result
+
+
+def _create_team(
+  k8s_clients: dict[str, Any],
+  name: str,
+  spec: dict[str, Any],
+) -> dict[str, Any]:
+  """Create a Team custom resource and return the body."""
+  body = {
+    "apiVersion": f"{KRATIX_GROUP}/{KRATIX_VERSION}",
+    "kind": "Team",
+    "metadata": {"name": name, "namespace": "default"},
+    "spec": spec,
+  }
+  k8s_clients["custom"].create_namespaced_custom_object(
+    group=KRATIX_GROUP,
+    version=KRATIX_VERSION,
+    namespace="default",
+    plural="teams",
+    body=body,
+  )
+  return body
+
+
+def _delete_team(k8s_clients: dict[str, Any], name: str) -> None:
+  """Delete a Team custom resource, ignoring 404."""
+  try:
+    k8s_clients["custom"].delete_namespaced_custom_object(
+      group=KRATIX_GROUP,
+      version=KRATIX_VERSION,
+      namespace="default",
+      plural="teams",
+      name=name,
+    )
+  except ApiException as e:
+    if e.status != 404:
+      raise
+
+
+def _cleanup_team(k8s_clients: dict[str, Any], name: str) -> None:
+  """Delete team and wait for its Work to disappear."""
+  _delete_team(k8s_clients, name)
+  try:
+    _wait_for_work_gone(k8s_clients, name, timeout=60)
+  except Exception:
+    pass  # best-effort cleanup
+
+
+# -- tests --------------------------------------------------------------------
+
+@pytest.mark.e2e
+class TestTeamLifecycle:
+  """Full create -> verify -> update -> verify -> delete -> verify cycle."""
+
+  TEAM_NAME = "e2e-lifecycle"
+  TEAM_ID = "team-lifecycle"
+
+  def test_team_lifecycle(self, k8s_clients):
+    """Full lifecycle: create, verify outputs, update, verify, delete, verify."""
+    # Ensure clean slate
+    _cleanup_team(k8s_clients, self.TEAM_NAME)
+
+    try:
+      # -- Step 1: Create -------------------------------------------------
+      _create_team(k8s_clients, self.TEAM_NAME, {
+        "id": self.TEAM_ID,
+        "name": "Lifecycle Team",
+        "email": "lifecycle@test.com",
+      })
+
+      # -- Step 2: Wait for reconciliation --------------------------------
+      _wait_for_status(k8s_clients, self.TEAM_NAME)
+
+      # -- Step 3: Verify Work resource and decoded contents --------------
+      work = _wait_for_work(k8s_clients, self.TEAM_NAME)
+      files = _extract_workloads(work)
+
+      # Backstage YAML
+      backstage_path = f"backstage-team-{self.TEAM_ID}.yaml"
+      assert backstage_path in files, (
+        f"Missing {backstage_path} in Work. Files: {list(files.keys())}"
+      )
+      backstage = yaml.safe_load(files[backstage_path])
+      assert backstage["kind"] == "Group"
+      assert backstage["metadata"]["name"] == self.TEAM_ID
+      assert backstage["spec"]["displayName"] == "Lifecycle Team"
+      assert (
+        backstage["metadata"]["annotations"]["contact.email"]
+        == "lifecycle@test.com"
+      )
+
+      # Terraform file
+      tf_path = f"terraform/org-{self.TEAM_ID}.tf"
+      assert tf_path in files, (
+        f"Missing {tf_path} in Work. Files: {list(files.keys())}"
+      )
+      tf_content = files[tf_path]
+      assert self.TEAM_ID in tf_content
+      assert "Lifecycle Team" in tf_content
+
+      # -- Step 4: Update the team ----------------------------------------
+      team = k8s_clients["custom"].get_namespaced_custom_object(
+        group=KRATIX_GROUP,
+        version=KRATIX_VERSION,
+        namespace="default",
+        plural="teams",
+        name=self.TEAM_NAME,
+      )
+      team["spec"]["name"] = "Updated Lifecycle Team"
+      team["spec"]["email"] = "updated@test.com"
+
+      k8s_clients["custom"].replace_namespaced_custom_object(
+        group=KRATIX_GROUP,
+        version=KRATIX_VERSION,
+        namespace="default",
+        plural="teams",
+        name=self.TEAM_NAME,
+        body=team,
+      )
+
+      # -- Step 5: Wait for re-reconciliation -----------------------------
+      # Give the controller time to pick up the change
+      time.sleep(5)
+      _wait_for_status(k8s_clients, self.TEAM_NAME)
+
+      # -- Step 6: Verify Work reflects the update ------------------------
+      work = _wait_for_work(k8s_clients, self.TEAM_NAME)
+      files = _extract_workloads(work)
+
+      backstage = yaml.safe_load(files[backstage_path])
+      assert backstage["spec"]["displayName"] == "Updated Lifecycle Team"
+      assert (
+        backstage["metadata"]["annotations"]["contact.email"]
+        == "updated@test.com"
+      )
+
+      tf_content = files[tf_path]
+      assert "Updated Lifecycle Team" in tf_content
+
+      # -- Step 7: Delete the team ----------------------------------------
+      _delete_team(k8s_clients, self.TEAM_NAME)
+
+      # -- Step 8: Verify Work is cleaned up ------------------------------
+      _wait_for_work_gone(k8s_clients, self.TEAM_NAME)
+
+    finally:
+      # Best-effort cleanup in case a step failed
+      _cleanup_team(k8s_clients, self.TEAM_NAME)
+
+
+@pytest.mark.e2e
+class TestTeamEmailDefault:
+  """Verify the default email behaviour when email is omitted."""
+
+  TEAM_NAME = "e2e-email-default"
+  TEAM_ID = "team-email-default"
+
+  def test_team_with_email_default(self, k8s_clients):
+    """Creating a team without email should use <id>@example.com."""
+    _cleanup_team(k8s_clients, self.TEAM_NAME)
+
+    try:
+      _create_team(k8s_clients, self.TEAM_NAME, {
+        "id": self.TEAM_ID,
+        "name": "Email Default Team",
+        # no email field
+      })
+
+      _wait_for_status(k8s_clients, self.TEAM_NAME)
+
+      work = _wait_for_work(k8s_clients, self.TEAM_NAME)
+      files = _extract_workloads(work)
+
+      backstage_path = f"backstage-team-{self.TEAM_ID}.yaml"
+      assert backstage_path in files
+
+      backstage = yaml.safe_load(files[backstage_path])
+      expected_email = f"{self.TEAM_ID}@example.com"
+      assert (
+        backstage["metadata"]["annotations"]["contact.email"]
+        == expected_email
+      ), (
+        f"Expected default email '{expected_email}', "
+        f"got '{backstage['metadata']['annotations']['contact.email']}'"
+      )
+
+    finally:
+      _cleanup_team(k8s_clients, self.TEAM_NAME)
