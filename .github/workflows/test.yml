@@ -53,11 +53,25 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.21"
+          cache: false
+
+      - name: Cache Kratix CLI
+        id: kratix-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/bin/kratix
+            ~/go/pkg/mod
+          key: kratix-cli-${{ runner.os }}-go1.21-week${{ github.run_number }}
+          restore-keys: |
+            kratix-cli-${{ runner.os }}-go1.21-
 
       - name: Install Kratix CLI
-        run: |
-          go install github.com/syntasso/kratix-cli/cmd/kratix@latest
-          echo "$HOME/go/bin" >> $GITHUB_PATH
+        if: steps.kratix-cli-cache.outputs.cache-hit != 'true'
+        run: go install github.com/syntasso/kratix-cli/cmd/kratix@latest
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
 
       - name: Create Kind cluster
         uses: helm/kind-action@v1.8.0
@@ -176,11 +190,25 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.21"
+          cache: false
+
+      - name: Cache Kratix CLI
+        id: kratix-cli-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/bin/kratix
+            ~/go/pkg/mod
+          key: kratix-cli-${{ runner.os }}-go1.21-week${{ github.run_number }}
+          restore-keys: |
+            kratix-cli-${{ runner.os }}-go1.21-
 
       - name: Install Kratix CLI
-        run: |
-          go install github.com/syntasso/kratix-cli/cmd/kratix@latest
-          echo "$HOME/go/bin" >> $GITHUB_PATH
+        if: steps.kratix-cli-cache.outputs.cache-hit != 'true'
+        run: go install github.com/syntasso/kratix-cli/cmd/kratix@latest
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
 
       - name: Create Kind cluster
         uses: helm/kind-action@v1.8.0
