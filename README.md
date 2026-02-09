@@ -157,7 +157,8 @@ After each stage, verify the setup:
 │   ├── 06-test-teams.sh             # Stage 6: Promise install + testing
 │   ├── gitea-config.sh              # Centralized Gitea configuration
 │   ├── setup-gitea-runner.sh        # Actions runner setup
-│   ├── run-tests.sh                 # Unit test runner
+│   ├── run-unit-tests.sh             # Unit test runner
+│   ├── run-integration-tests.sh     # Integration test runner
 │   └── run-contract-tests.sh        # Contract test runner
 ├── tests/                 # Comprehensive test suite
 │   ├── unit/              # Unit tests for configure scripts
@@ -222,7 +223,10 @@ The project includes automated test scripts that handle virtual environment setu
 
 ```bash
 # Run unit tests (fastest, tests Promise configure scripts)
-./scripts/run-tests.sh
+./scripts/run-unit-tests.sh
+
+# Run integration tests (requires running cluster with Kratix)
+./scripts/run-integration-tests.sh
 
 # Run contract tests (API and format validation)
 ./scripts/run-contract-tests.sh
@@ -243,7 +247,7 @@ python -m pytest contract/ -v
 deactivate
 ```
 
-**Recommended**: Use the test scripts (`./scripts/run-tests.sh` and `./scripts/run-contract-tests.sh`) as they automatically handle virtual environment setup, dependency installation, and cleanup.
+**Recommended**: Use the test scripts (`./scripts/run-unit-tests.sh`, `./scripts/run-integration-tests.sh`, and `./scripts/run-contract-tests.sh`) as they automatically handle virtual environment setup, dependency installation, and cleanup.
 
 ### Test Structure
 

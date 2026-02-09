@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Test runner script for team-promise
+# Unit test runner script for team-promise
 # Follows the instructions in CLAUDE.md
 
 set -e  # Exit on any error
 
-echo "🧪 Running team-promise tests..."
+echo "🧪 Running team-promise unit tests..."
 echo
 
 cd tests
@@ -27,7 +27,7 @@ echo "Running unit tests..."
 PYTHONPATH=../promises/team-promise/workflows/resource/configure/team-configure/python/scripts python -m pytest unit/ -v
 
 echo
-echo "✅ All tests completed successfully!"
+echo "✅ All unit tests completed successfully!"
 
 deactivate
 echo "Virtual environment deactivated."

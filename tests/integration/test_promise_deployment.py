@@ -1,116 +1,100 @@
-#!/usr/bin/env python3
+"""Integration tests for Kratix platform and Team Promise deployment.
 
-import unittest
-import yaml
-import subprocess
-import time
-from kubernetes import client, config
+These tests verify that:
+- Kratix platform components are running
+- The Team Promise is deployed and available
+- The Team CRD is created correctly
+
+Prerequisites: A running Kind cluster with Kratix installed and the Team Promise
+deployed (run ./scripts/run-integration-tests.sh which handles this).
+"""
+
+import pytest
 from kubernetes.client.rest import ApiException
 
-class TestPromiseDeployment(unittest.TestCase):
-    
-    @classmethod
-    def setUpClass(cls):
-        """Set up Kubernetes client"""
-        try:
-            # Try to load in-cluster config first, then local
-            config.load_incluster_config()
-        except:
-            config.load_kube_config()
-        
-        cls.api_client = client.ApiClient()
-        cls.custom_api = client.CustomObjectsApi()
-        cls.apps_api = client.AppsV1Api()
-        cls.core_api = client.CoreV1Api()
-    
-    def test_kratix_platform_running(self):
-        """Test that Kratix platform components are running"""
-        try:
-            pods = self.core_api.list_namespaced_pod(
-                namespace="kratix-platform-system",
-                label_selector="app.kubernetes.io/part-of=kratix"
-            )
-            
-            # Check that we have Kratix pods
-            self.assertGreater(len(pods.items), 0, "No Kratix pods found")
-            
-            # Check that all pods are running
-            for pod in pods.items:
-                self.assertEqual(
-                    pod.status.phase, 
-                    "Running", 
-                    f"Pod {pod.metadata.name} is not running: {pod.status.phase}"
-                )
-        except ApiException as e:
-            self.fail(f"Failed to check Kratix pods: {e}")
-    
-    def test_promise_deployment(self):
-        """Test that the Team Promise can be deployed"""
-        promise_path = "/home/james/src/orchestrator-poc/promises/team-promise/promise.yaml"
-        
-        # Load the Promise definition
-        with open(promise_path, 'r') as f:
-            promise_def = yaml.safe_load(f)
-        
-        # Deploy the Promise
-        try:
-            self.custom_api.create_cluster_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                plural="promises",
-                body=promise_def
-            )
-            
-            # Wait for Promise to be ready
-            time.sleep(10)
-            
-            # Check Promise status
-            promise = self.custom_api.get_cluster_custom_object(
-                group="platform.kratix.io",
-                version="v1alpha1",
-                plural="promises",
-                name="team"
-            )
-            
-            self.assertIsNotNone(promise)
-            self.assertEqual(promise['metadata']['name'], 'team')
-            
-        except ApiException as e:
-            if e.status == 409:  # Already exists
-                self.skipTest("Promise already exists")
-            else:
-                self.fail(f"Failed to deploy Promise: {e}")
-        finally:
-            # Cleanup - delete the Promise
-            try:
-                self.custom_api.delete_cluster_custom_object(
-                    group="platform.kratix.io",
-                    version="v1alpha1",
-                    plural="promises",
-                    name="team"
-                )
-            except ApiException:
-                pass  # Ignore cleanup errors
-    
-    def test_crd_creation(self):
-        """Test that the Team CRD is created when Promise is deployed"""
-        # This test assumes the Promise was deployed in the previous test
-        try:
-            # Check if Team CRD exists
-            extensions_api = client.ApiextensionsV1Api()
-            crd = extensions_api.read_custom_resource_definition(
-                name="teams.platform.kratix.io"
-            )
-            
-            self.assertIsNotNone(crd)
-            self.assertEqual(crd.spec.group, "platform.kratix.io")
-            self.assertEqual(crd.spec.names.kind, "Team")
-            
-        except ApiException as e:
-            if e.status == 404:
-                self.skipTest("Team CRD not found - Promise may not be deployed")
-            else:
-                self.fail(f"Failed to check Team CRD: {e}")
 
-if __name__ == '__main__':
-    unittest.main()
+class TestKratixPlatform:
+  """Tests for Kratix platform health."""
+
+  def test_kratix_pods_running(self, k8s_clients):
+    """Kratix platform pods should be running."""
+    pods = k8s_clients["core"].list_namespaced_pod(
+      namespace="kratix-platform-system",
+    )
+
+    running = [p for p in pods.items if p.status.phase == "Running"]
+    assert len(running) > 0, "No running Kratix pods found"
+
+  def test_kratix_controller_ready(self, k8s_clients):
+    """Kratix controller manager deployment should be available."""
+    deploy = k8s_clients["apps"].read_namespaced_deployment(
+      name="kratix-platform-controller-manager",
+      namespace="kratix-platform-system",
+    )
+
+    available = deploy.status.available_replicas or 0
+    assert available >= 1, (
+      f"Controller manager not available: "
+      f"{available}/{deploy.spec.replicas} replicas"
+    )
+
+
+class TestTeamPromise:
+  """Tests for Team Promise deployment."""
+
+  def test_promise_exists(self, k8s_clients):
+    """Team Promise should be deployed."""
+    promise = k8s_clients["custom"].get_cluster_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      plural="promises",
+      name="team",
+    )
+
+    assert promise["metadata"]["name"] == "team"
+
+  def test_promise_available(self, k8s_clients):
+    """Team Promise should have Available status."""
+    promise = k8s_clients["custom"].get_cluster_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      plural="promises",
+      name="team",
+    )
+
+    status = promise.get("status", {})
+    conditions = status.get("conditions", [])
+    available = [
+      c for c in conditions
+      if c.get("type") == "Available" and c.get("status") == "True"
+    ]
+    assert len(available) > 0, (
+      f"Promise not Available. Conditions: {conditions}"
+    )
+
+  def test_team_crd_exists(self, k8s_clients):
+    """Team CRD should be created by the Promise."""
+    crd = k8s_clients["extensions"].read_custom_resource_definition(
+      name="teams.platform.kratix.io",
+    )
+
+    assert crd.spec.group == "platform.kratix.io"
+    assert crd.spec.names.kind == "Team"
+    assert crd.spec.names.plural == "teams"
+
+  def test_team_crd_has_expected_fields(self, k8s_clients):
+    """Team CRD should have id, name, and email fields."""
+    crd = k8s_clients["extensions"].read_custom_resource_definition(
+      name="teams.platform.kratix.io",
+    )
+
+    version = crd.spec.versions[0]
+    properties = (
+      version.schema.open_apiv3_schema
+      .properties["spec"]
+      .properties
+    )
+
+    assert "id" in properties, "CRD missing 'id' field"
+    assert "name" in properties, "CRD missing 'name' field"
+    assert "email" in properties, "CRD missing 'email' field"

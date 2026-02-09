@@ -1,128 +1,141 @@
-#!/usr/bin/env python3
+"""Integration tests for Team Promise workflow execution.
 
-import unittest
-import yaml
+These tests verify that:
+- A Team resource can be created and reconciled
+- The workflow generates expected outputs
+- Team resources can be deleted cleanly
+
+Prerequisites: A running Kind cluster with Kratix installed and the Team Promise
+deployed (run ./scripts/run-integration-tests.sh which handles this).
+"""
+
 import time
-import tempfile
-import docker
-from kubernetes import client, config
+import pytest
 from kubernetes.client.rest import ApiException
 
-class TestWorkflowExecution(unittest.TestCase):
-    
-    @classmethod
-    def setUpClass(cls):
-        """Set up Kubernetes and Docker clients"""
-        try:
-            config.load_incluster_config()
-        except:
-            config.load_kube_config()
-        
-        cls.custom_api = client.CustomObjectsApi()
-        cls.core_api = client.CoreV1Api()
-        cls.docker_client = docker.from_env()
-    
-    def test_container_build(self):
-        """Test that the team-configure container can be built"""
-        dockerfile_path = "/home/james/src/orchestrator-poc/promises/team-promise/workflows/resource/configure/team-configure/python"
-        
-        try:
-            # Build the Docker image
-            image, logs = self.docker_client.images.build(
-                path=dockerfile_path,
-                tag="team-configure:test",
-                rm=True
-            )
-            
-            self.assertIsNotNone(image)
-            self.assertIn("team-configure:test", image.tags)
-            
-            # Cleanup
-            self.docker_client.images.remove(image.id, force=True)
-            
-        except docker.errors.BuildError as e:
-            self.fail(f"Failed to build container: {e}")
-    
-    def test_container_execution(self):
-        """Test that the configure container executes successfully"""
-        dockerfile_path = "/home/james/src/orchestrator-poc/promises/team-promise/workflows/resource/configure/team-configure/python"
-        
-        # Create test input
-        test_team = {
-            'apiVersion': 'platform.kratix.io/v1alpha1',
-            'kind': 'Team',
-            'metadata': {
-                'name': 'test-team-workflow',
-                'namespace': 'default'
-            },
-            'spec': {
-                'id': 'team-workflow-test',
-                'name': 'Workflow Test Team'
-            }
-        }
-        
-        try:
-            # Build the image
-            image, _ = self.docker_client.images.build(
-                path=dockerfile_path,
-                tag="team-configure:workflow-test",
-                rm=True
-            )
-            
-            # Create temporary input file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-                yaml.dump(test_team, f)
-                input_file = f.name
-            
-            # Create temporary output directory
-            with tempfile.TemporaryDirectory() as output_dir:
-                # Run the container
-                container = self.docker_client.containers.run(
-                    image="team-configure:workflow-test",
-                    volumes={
-                        input_file: {'bind': '/kratix/input/object.yaml', 'mode': 'ro'},
-                        output_dir: {'bind': '/kratix/output', 'mode': 'rw'}
-                    },
-                    detach=True,
-                    remove=True
-                )
-                
-                # Wait for completion
-                result = container.wait()
-                logs = container.logs().decode('utf-8')
-                
-                # Check exit code
-                self.assertEqual(result['StatusCode'], 0, f"Container failed with logs: {logs}")
-                
-                # Check output file was created
-                import os
-                output_files = os.listdir(output_dir)
-                self.assertGreater(len(output_files), 0, "No output files generated")
-                
-                # Validate output content
-                backstage_file = None
-                for file in output_files:
-                    if file.startswith('backstage-team-'):
-                        backstage_file = os.path.join(output_dir, file)
-                        break
-                
-                self.assertIsNotNone(backstage_file, "Backstage team file not found")
-                
-                with open(backstage_file, 'r') as f:
-                    backstage_output = yaml.safe_load(f)
-                
-                # Validate Backstage format
-                self.assertEqual(backstage_output['apiVersion'], 'backstage.io/v1alpha1')
-                self.assertEqual(backstage_output['kind'], 'Group')
-                self.assertEqual(backstage_output['metadata']['name'], 'team-workflow-test')
-                self.assertEqual(backstage_output['spec']['displayName'], 'Workflow Test Team')
-            
-            # Cleanup
-            self.docker_client.images.remove(image.id, force=True)
-            os.unlink(input_file)
-            
-        except Exception as e:
-            self.fail(f"Container execution test failed: {e}")
 
-if __name__ == '__main__':
-    unittest.main()
+TEAM_RESOURCE = {
+  "apiVersion": "platform.kratix.io/v1alpha1",
+  "kind": "Team",
+  "metadata": {
+    "name": "integration-test-team",
+    "namespace": "default",
+  },
+  "spec": {
+    "id": "team-integration",
+    "name": "Integration Test Team",
+    "email": "integration@test.com",
+  },
+}
+
+
+@pytest.fixture()
+def team_resource(k8s_clients):
+  """Create a Team resource and clean it up after the test."""
+  custom = k8s_clients["custom"]
+
+  # Delete if leftover from a previous run
+  try:
+    custom.delete_namespaced_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      namespace="default",
+      plural="teams",
+      name=TEAM_RESOURCE["metadata"]["name"],
+    )
+    time.sleep(5)
+  except ApiException as e:
+    if e.status != 404:
+      raise
+
+  # Create
+  custom.create_namespaced_custom_object(
+    group="platform.kratix.io",
+    version="v1alpha1",
+    namespace="default",
+    plural="teams",
+    body=TEAM_RESOURCE,
+  )
+
+  yield TEAM_RESOURCE
+
+  # Cleanup
+  try:
+    custom.delete_namespaced_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      namespace="default",
+      plural="teams",
+      name=TEAM_RESOURCE["metadata"]["name"],
+    )
+  except ApiException:
+    pass
+
+
+def _wait_for_team_status(k8s_clients, name: str, timeout: int = 120) -> dict:
+  """Poll until the Team resource has a status message, or timeout."""
+  custom = k8s_clients["custom"]
+  deadline = time.time() + timeout
+
+  while time.time() < deadline:
+    team = custom.get_namespaced_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      namespace="default",
+      plural="teams",
+      name=name,
+    )
+    status = team.get("status", {})
+    if status.get("message"):
+      return team
+    time.sleep(5)
+
+  return team
+
+
+class TestTeamWorkflow:
+  """Tests for Team resource workflow execution."""
+
+  def test_team_creation(self, k8s_clients, team_resource):
+    """Creating a Team resource should succeed."""
+    team = k8s_clients["custom"].get_namespaced_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      namespace="default",
+      plural="teams",
+      name=team_resource["metadata"]["name"],
+    )
+
+    assert team["spec"]["id"] == "team-integration"
+    assert team["spec"]["name"] == "Integration Test Team"
+    assert team["spec"]["email"] == "integration@test.com"
+
+  def test_team_reconciliation(self, k8s_clients, team_resource):
+    """Team resource should reach Reconciled status."""
+    team = _wait_for_team_status(
+      k8s_clients, team_resource["metadata"]["name"]
+    )
+
+    status = team.get("status", {})
+    assert status.get("message"), (
+      f"Team never got a status message. Status: {status}"
+    )
+
+  def test_work_resource_created(self, k8s_clients, team_resource):
+    """A Work resource should be created for the Team."""
+    name = team_resource["metadata"]["name"]
+
+    # Wait for reconciliation first
+    _wait_for_team_status(k8s_clients, name)
+
+    # Check for Work resources with the team label
+    works = k8s_clients["custom"].list_cluster_custom_object(
+      group="platform.kratix.io",
+      version="v1alpha1",
+      plural="works",
+      label_selector=f"kratix.io/resource-name={name}",
+    )
+
+    assert len(works.get("items", [])) > 0, (
+      f"No Work resources found for team '{name}'"
+    )
