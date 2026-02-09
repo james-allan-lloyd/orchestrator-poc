@@ -28,8 +28,13 @@ def _wait_for_work(
   k8s_clients: dict[str, Any],
   team_name: str,
   timeout: int = 120,
+  previous_resource_version: str | None = None,
 ) -> dict[str, Any]:
-  """Poll until a Work resource exists for the given team, or timeout."""
+  """Poll until a Work resource exists for the given team, or timeout.
+
+  If *previous_resource_version* is given, keep polling until the Work's
+  resourceVersion differs (i.e. the controller has re-reconciled).
+  """
   custom = k8s_clients["custom"]
   deadline = time.time() + timeout
 
@@ -42,9 +47,16 @@ def _wait_for_work(
     )
     items = works.get("items", [])
     if items:
-      return items[0]
+      work = items[0]
+      rv = work.get("metadata", {}).get("resourceVersion")
+      if previous_resource_version is None or rv != previous_resource_version:
+        return work
     time.sleep(5)
 
+  if previous_resource_version is not None:
+    pytest.fail(
+      f"Work for team '{team_name}' was not updated within {timeout}s"
+    )
   pytest.fail(f"No Work resource found for team '{team_name}' within {timeout}s")
 
 
@@ -209,6 +221,9 @@ class TestTeamLifecycle:
       assert "Lifecycle Team" in tf_content
 
       # -- Step 4: Update the team ----------------------------------------
+      # Capture current Work resourceVersion so we can detect re-reconciliation
+      work_rv = work.get("metadata", {}).get("resourceVersion")
+
       team = k8s_clients["custom"].get_namespaced_custom_object(
         group=KRATIX_GROUP,
         version=KRATIX_VERSION,
@@ -229,12 +244,13 @@ class TestTeamLifecycle:
       )
 
       # -- Step 5: Wait for re-reconciliation -----------------------------
-      # Give the controller time to pick up the change
-      time.sleep(5)
       _wait_for_status(k8s_clients, self.TEAM_NAME)
 
       # -- Step 6: Verify Work reflects the update ------------------------
-      work = _wait_for_work(k8s_clients, self.TEAM_NAME)
+      work = _wait_for_work(
+        k8s_clients, self.TEAM_NAME,
+        previous_resource_version=work_rv,
+      )
       files = _extract_workloads(work)
 
       backstage = yaml.safe_load(files[backstage_path])
