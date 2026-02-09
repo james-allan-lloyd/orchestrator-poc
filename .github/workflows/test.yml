@@ -89,6 +89,26 @@ jobs:
             echo "[${SECONDS}s] Installer still running..."
             kubectl get jobs --no-headers 2>/dev/null || true
             kubectl get pods --no-headers 2>/dev/null | head -10 || true
+
+            # Fail fast if the job has failed
+            JOB_FAILED=$(kubectl get job kratix-quick-start-installer -o jsonpath='{.status.failed}' 2>/dev/null || echo "0")
+            if [ "${JOB_FAILED:-0}" -ge 1 ]; then
+              echo "FAILED: Installer job has ${JOB_FAILED} failed attempt(s)"
+              echo ""
+              echo "=== Pod status ==="
+              kubectl get pods --selector=job-name=kratix-quick-start-installer -o wide 2>/dev/null
+              echo ""
+              echo "=== Pod logs ==="
+              for pod in $(kubectl get pods --selector=job-name=kratix-quick-start-installer -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                echo "--- $pod ---"
+                kubectl logs "$pod" --all-containers --tail=50 2>/dev/null || echo "No logs"
+              done
+              echo ""
+              echo "=== Pod events ==="
+              kubectl describe pods --selector=job-name=kratix-quick-start-installer 2>/dev/null | grep -A 20 "^Events:" || true
+              exit 1
+            fi
+
             if [ "$SECONDS" -ge 420 ]; then
               echo "TIMEOUT after ${SECONDS}s"
               exit 1
@@ -226,6 +246,26 @@ jobs:
             echo "[${SECONDS}s] Installer still running..."
             kubectl get jobs --no-headers 2>/dev/null || true
             kubectl get pods --no-headers 2>/dev/null | head -10 || true
+
+            # Fail fast if the job has failed
+            JOB_FAILED=$(kubectl get job kratix-quick-start-installer -o jsonpath='{.status.failed}' 2>/dev/null || echo "0")
+            if [ "${JOB_FAILED:-0}" -ge 1 ]; then
+              echo "FAILED: Installer job has ${JOB_FAILED} failed attempt(s)"
+              echo ""
+              echo "=== Pod status ==="
+              kubectl get pods --selector=job-name=kratix-quick-start-installer -o wide 2>/dev/null
+              echo ""
+              echo "=== Pod logs ==="
+              for pod in $(kubectl get pods --selector=job-name=kratix-quick-start-installer -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                echo "--- $pod ---"
+                kubectl logs "$pod" --all-containers --tail=50 2>/dev/null || echo "No logs"
+              done
+              echo ""
+              echo "=== Pod events ==="
+              kubectl describe pods --selector=job-name=kratix-quick-start-installer 2>/dev/null | grep -A 20 "^Events:" || true
+              exit 1
+            fi
+
             if [ "$SECONDS" -ge 420 ]; then
               echo "TIMEOUT after ${SECONDS}s"
               exit 1
