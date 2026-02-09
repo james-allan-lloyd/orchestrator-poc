@@ -69,11 +69,54 @@ jobs:
         run: |
           kubectl apply -f https://github.com/syntasso/kratix/releases/download/latest/kratix-quick-start-installer.yaml
 
-          # Wait for installation to complete
-          kubectl wait --for=condition=complete job/kratix-quick-start-installer --timeout=300s
+          echo "Waiting for quick-start installer job to complete..."
+          SECONDS=0
+          while ! kubectl wait --for=condition=complete job/kratix-quick-start-installer --timeout=30s 2>/dev/null; do
+            echo "[${SECONDS}s] Installer still running..."
+            kubectl get jobs --no-headers 2>/dev/null || true
+            kubectl get pods --no-headers 2>/dev/null | head -10 || true
+            if [ "$SECONDS" -ge 420 ]; then
+              echo "TIMEOUT after ${SECONDS}s"
+              exit 1
+            fi
+          done
+          echo "Installer job completed in ${SECONDS}s"
 
-          # Verify Kratix is running
+          echo "Waiting for Kratix pods to be ready..."
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kratix -n kratix-platform-system --timeout=120s
+
+      - name: Debug Kratix install failure
+        if: failure()
+        run: |
+          echo "=== Cluster nodes ==="
+          kubectl get nodes -o wide
+          echo ""
+          echo "=== All pods (all namespaces) ==="
+          kubectl get pods -A -o wide
+          echo ""
+          echo "=== Jobs ==="
+          kubectl get jobs -A -o wide
+          echo ""
+          echo "=== Installer job description ==="
+          kubectl describe job/kratix-quick-start-installer 2>/dev/null || echo "Job not found"
+          echo ""
+          echo "=== Installer pod logs ==="
+          for pod in $(kubectl get pods --selector=job-name=kratix-quick-start-installer -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+            echo "--- Pod: $pod ---"
+            kubectl logs "$pod" --all-containers --tail=80 2>/dev/null || echo "No logs"
+          done
+          echo ""
+          echo "=== Kratix platform pods ==="
+          kubectl get pods -n kratix-platform-system -o wide 2>/dev/null || echo "Namespace not found"
+          echo ""
+          echo "=== Kratix platform pod logs ==="
+          for pod in $(kubectl get pods -n kratix-platform-system -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+            echo "--- Pod: $pod ---"
+            kubectl logs -n kratix-platform-system "$pod" --all-containers --tail=40 2>/dev/null || echo "No logs"
+          done
+          echo ""
+          echo "=== Events (sorted by time) ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
       - name: Apply Kratix UID 65534 patch
         run: |
@@ -149,11 +192,54 @@ jobs:
         run: |
           kubectl apply -f https://github.com/syntasso/kratix/releases/download/latest/kratix-quick-start-installer.yaml
 
-          # Wait for installation to complete
-          kubectl wait --for=condition=complete job/kratix-quick-start-installer --timeout=300s
+          echo "Waiting for quick-start installer job to complete..."
+          SECONDS=0
+          while ! kubectl wait --for=condition=complete job/kratix-quick-start-installer --timeout=30s 2>/dev/null; do
+            echo "[${SECONDS}s] Installer still running..."
+            kubectl get jobs --no-headers 2>/dev/null || true
+            kubectl get pods --no-headers 2>/dev/null | head -10 || true
+            if [ "$SECONDS" -ge 420 ]; then
+              echo "TIMEOUT after ${SECONDS}s"
+              exit 1
+            fi
+          done
+          echo "Installer job completed in ${SECONDS}s"
 
-          # Verify Kratix is running
+          echo "Waiting for Kratix pods to be ready..."
           kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kratix -n kratix-platform-system --timeout=120s
+
+      - name: Debug Kratix install failure
+        if: failure()
+        run: |
+          echo "=== Cluster nodes ==="
+          kubectl get nodes -o wide
+          echo ""
+          echo "=== All pods (all namespaces) ==="
+          kubectl get pods -A -o wide
+          echo ""
+          echo "=== Jobs ==="
+          kubectl get jobs -A -o wide
+          echo ""
+          echo "=== Installer job description ==="
+          kubectl describe job/kratix-quick-start-installer 2>/dev/null || echo "Job not found"
+          echo ""
+          echo "=== Installer pod logs ==="
+          for pod in $(kubectl get pods --selector=job-name=kratix-quick-start-installer -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+            echo "--- Pod: $pod ---"
+            kubectl logs "$pod" --all-containers --tail=80 2>/dev/null || echo "No logs"
+          done
+          echo ""
+          echo "=== Kratix platform pods ==="
+          kubectl get pods -n kratix-platform-system -o wide 2>/dev/null || echo "Namespace not found"
+          echo ""
+          echo "=== Kratix platform pod logs ==="
+          for pod in $(kubectl get pods -n kratix-platform-system -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+            echo "--- Pod: $pod ---"
+            kubectl logs -n kratix-platform-system "$pod" --all-containers --tail=40 2>/dev/null || echo "No logs"
+          done
+          echo ""
+          echo "=== Events (sorted by time) ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
       - name: Apply Kratix UID 65534 patch
         run: |
