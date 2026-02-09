@@ -85,15 +85,8 @@ jobs:
           echo "=== Events (last 30) ==="
           kubectl get events -A --sort-by='.lastTimestamp' | tail -30
 
-      - name: Install test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r tests/requirements.txt
-
       - name: Run integration tests
-        run: |
-          cd tests
-          python -m pytest integration/ -v --tb=short
+        run: ./scripts/run-integration-tests.sh
         env:
           KUBECONFIG: /home/runner/.kube/config
 
@@ -202,4 +195,3 @@ jobs:
           python -m py_compile tests/integration/test_promise_deployment.py
           python -m py_compile tests/contract/test_api_schema.py
           python -m py_compile tests/e2e/test_team_provisioning.py
-
